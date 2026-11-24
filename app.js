@@ -12,6 +12,16 @@
   const LOCALES = { de: 'de-DE', tr: 'tr-TR', en: 'en-GB', bs: 'bs-BA' };
   const MOODS = [5, 4, 3, 2, 1];
   const MOOD_EMOJI = { 1: '😢', 2: '😕', 3: '😐', 4: '🙂', 5: '😄' };
+  const FEELS = [
+    { key: 'happy', emoji: '😄', mood: 5 },
+    { key: 'calm', emoji: '😌', mood: 4 },
+    { key: 'neutral', emoji: '😐', mood: 3 },
+    { key: 'tired', emoji: '😴', mood: 3 },
+    { key: 'sad', emoji: '😔', mood: 2 },
+    { key: 'anxious', emoji: '😟', mood: 2 },
+    { key: 'angry', emoji: '😠', mood: 1 }
+  ];
+  const FEEL = Object.fromEntries(FEELS.map(f => [f.key, f]));
   const TAGS = ['family', 'friends', 'work', 'school', 'idea', 'health', 'nature', 'gratitude'];
   const TAG_EMOJI = { family: '🏡', friends: '🤝', work: '💼', school: '📚', idea: '💡', health: '💪', nature: '🌳', gratitude: '🙏' };
   const VIEWS = ['pages', 'calendar', 'today', 'settings'];
@@ -100,6 +110,9 @@
     date: todayKey(),
     lastToday: todayKey(),
     draft: { title: '', time: '', text: '', mood: null, tags: [] },
+    draftFeel: { feel: null, words: [], note: '' },
+    editFeel: { feel: null, words: [], note: '' },
+    calFeel: null,
     openMoments: new Set(),
     detailsOpen: false,
     editing: null,
@@ -185,7 +198,7 @@
   const day = k => state.days[k];
   const ensureDay = k => (state.days[k] ||= { moments: [], review: null });
   const reviewFilled = r => !!r && !!(r.savedAt || REVIEW_FIELDS.some(f => (r[f] || '').trim()));
-  const hasContent = k => { const d = day(k); return !!d && (d.moments.length > 0 || reviewFilled(d.review) || !!(d.title || '').trim()); };
+  const hasContent = k => { const d = day(k); return !!d && (d.moments.length > 0 || reviewFilled(d.review)); };
   function cleanup(k) { if (day(k) && !hasContent(k)) delete state.days[k]; }
   function dayMood(k) {
     const d = day(k); if (!d) return 0;
@@ -235,6 +248,43 @@
     return '';
   }
 
+  function feelPicker(scope, sel) {
+    const f = sel.feel ? FEEL[sel.feel] : null;
+    const words = f ? t('feelWords_' + f.key) : [];
+    return `
+      <div class="feel" data-scope="${scope}">
+        <span class="feel-q">${esc(t('feelQ'))}</span>
+        <div class="feel-emojis" role="radiogroup" aria-label="${esc(t('feelQ'))}">
+          ${FEELS.map(x => `
+            <button class="femoji ${sel.feel === x.key ? 'on' : ''}" data-action="pick-feel" data-scope="${scope}" data-feel="${x.key}" role="radio" aria-checked="${sel.feel === x.key}" style="--c:var(--mood-${x.mood})">
+              <span class="fe" aria-hidden="true">${x.emoji}</span><span class="fl">${esc(t('feel_' + x.key))}</span>
+            </button>`).join('')}
+        </div>
+        ${f ? `
+          <div class="feel-more">
+            <span class="feel-hint">${esc(t('feelWordsHint'))}</span>
+            <div class="feel-words">
+              ${words.map(w => `<button class="fword ${sel.words.includes(w) ? 'on' : ''}" data-action="toggle-word" data-scope="${scope}" data-word="${esc(w)}" aria-pressed="${sel.words.includes(w)}">${esc(w)}</button>`).join('')}
+            </div>
+            <textarea id="${scope}-feelnote" class="feel-note" rows="1" placeholder="${esc(t('feelNotePh'))}">${esc(sel.note)}</textarea>
+          </div>` : ''}
+      </div>`;
+  }
+
+  // Gefühl eines Moments als Anzeige
+  function feelView(m) {
+    const f = m.feel && FEEL[m.feel];
+    if (!f && !m.mood) return '';
+    const name = f ? t('feel_' + f.key) : t('mood' + m.mood);
+    const emoji = f ? f.emoji : MOOD_EMOJI[m.mood];
+    return `
+      <div class="m-feel" style="--c:var(--mood-${f ? f.mood : m.mood})">
+        <span class="m-feel-head"><span class="fe" aria-hidden="true">${emoji}</span><b>${esc(name)}</b>${(m.feelWords || []).map(w => `<span class="fword sm">${esc(w)}</span>`).join('')}</span>
+        ${(m.feelNote || '').trim() ? `<p class="m-feel-note">${esc(m.feelNote)}</p>` : ''}
+      </div>`;
+  }
+  const feelEmoji = m => (m.feel && FEEL[m.feel]) ? FEEL[m.feel].emoji : (m.mood ? MOOD_EMOJI[m.mood] : '');
+
   const momentLabel = m => (m.title || '').trim() || trunc((m.text || '').split('\n')[0], 60) || (m.mood ? t('mood' + m.mood) : '');
 
   // Nummerierte, aufklappbare Liste der Momente (Heute und Buchseiten)
@@ -254,7 +304,7 @@
               <label class="time-pick" title="${esc(t('timeLabel'))}"><span class="sr">${esc(t('timeLabel'))}</span><input id="edit-time" type="time" value="${hhmm(new Date(m.time))}"></label>
             </div>
             <textarea id="edit-text" class="lined" rows="2" aria-label="${esc(t('edit'))}">${esc(m.text)}</textarea>
-            <div class="mchips small">${moodChips('edit-mood', ui.editMood)}</div>
+            ${feelPicker('edit', ui.editFeel)}
             <div class="edit-actions">
               <button class="btn ghost sm" data-action="cancel-edit">${esc(t('cancel'))}</button>
               <button class="btn primary sm" data-action="save-edit" data-id="${m.id}">${esc(t('saveChanges'))}</button>
@@ -270,7 +320,7 @@
         <button class="mhead" data-action="toggle-moment" data-id="${m.id}" aria-expanded="${open}">
           ${num}
           <span class="mtitle ${hasTitle ? '' : 'plain'}">${esc(momentLabel(m))}</span>
-          ${m.mood ? `<i class="mdot-s" style="--c:var(--mood-${m.mood})" title="${esc(t('mood' + m.mood))}"></i>` : ''}
+          ${feelEmoji(m) ? `<span class="mfe" aria-hidden="true">${feelEmoji(m)}</span>` : ''}
           <time class="mtime">${esc(fmtTime(m.time))}</time>
           <span class="chev" aria-hidden="true">⌄</span>
         </button>
@@ -278,7 +328,8 @@
           <div class="details-inner">
             <div class="mbody">
               ${m.text ? `<p class="m-text">${highlightTags(esc(m.text))}</p>` : ''}
-              ${(m.mood || tags) ? `<div class="m-tags">${m.mood ? `<span class="m-mood" style="--c:var(--mood-${m.mood})">${young() ? MOOD_EMOJI[m.mood] + ' ' : ''}${esc(t('mood' + m.mood))}</span>` : ''}${tags}</div>` : ''}
+              ${feelView(m)}
+              ${tags ? `<div class="m-tags">${tags}</div>` : ''}
               ${readOnly ? '' : `
                 <div class="m-foot">
                   ${m.editedAt ? `<span class="m-edited">${esc(t('editedLabel'))}</span>` : '<span></span>'}
@@ -301,7 +352,7 @@
     const title = isToday
       ? `${esc(greeting())}${name ? `, <span class="accent-text">${esc(name)}</span>` : ''}`
       : esc(fmt(dateOf(k), { weekday: 'long' }));
-    const picked = (ui.draft.mood ? 1 : 0) + ui.draft.tags.length;
+    const picked = ui.draft.tags.length;
     const l = `
       <header class="hero">
         <p class="eyebrow">${esc(fmt(dateOf(k), { weekday: 'long', day: 'numeric', month: 'long' }))}</p>
@@ -309,20 +360,15 @@
         ${isToday ? dailyCorner() : ''}
       </header>
       ${dayNav(k)}
-      <label class="day-title-wrap">
-        <span class="mini-label">${esc(t('dayTitleLabel'))}</span>
-        <input id="day-title" class="day-title" type="text" maxlength="80" placeholder="${esc(t('titlePlaceholder'))}" value="${esc(d?.title || '')}">
-      </label>
       <section class="composer" id="composer">
         <div class="mt-row">
           <input id="moment-title" class="moment-title" type="text" maxlength="80" placeholder="${esc(t('momentTitlePh'))}" aria-label="${esc(t('momentTitlePh'))}" value="${esc(ui.draft.title)}">
           <label class="time-pick" title="${esc(t('timeLabel'))}"><span class="sr">${esc(t('timeLabel'))}</span><input id="moment-time" type="time" value="${esc(ui.draft.time || hhmm(new Date()))}"></label>
         </div>
         <textarea id="moment-text" class="lined" rows="4" placeholder="${esc(tq('placeholder'))}" aria-label="${esc(t('placeholder'))}">${esc(ui.draft.text)}</textarea>
+        ${feelPicker('draft', ui.draftFeel)}
         <div class="details ${ui.detailsOpen ? 'open' : ''}" id="details">
           <div class="details-inner">
-            <span class="label">${esc(t('howFeel'))}</span>
-            <div class="mchips">${moodChips('pick-mood', ui.draft.mood)}</div>
             <span class="label">${esc(t('topics'))}</span>
             <div class="tags">
               ${TAGS.map(tag => `<button class="chip ${ui.draft.tags.includes(tag) ? 'on' : ''}" data-action="toggle-tag" data-tag="${tag}" aria-pressed="${ui.draft.tags.includes(tag)}">${tagLabel(tag)}</button>`).join('')}
@@ -331,7 +377,7 @@
         </div>
         <div class="composer-actions">
           <button class="link-btn" data-action="toggle-details" aria-expanded="${ui.detailsOpen}" aria-controls="details">
-            <span class="plus ${ui.detailsOpen ? 'open' : ''}" aria-hidden="true">+</span>${esc(t('addDetails'))}<span class="badge" ${picked ? '' : 'hidden'}>${picked}</span>
+            <span class="plus ${ui.detailsOpen ? 'open' : ''}" aria-hidden="true">+</span>${esc(t('addTopics'))}<span class="badge" ${picked ? '' : 'hidden'}>${picked}</span>
           </button>
           <button class="btn primary sm" data-action="save-moment">${esc(t('save'))}</button>
         </div>
@@ -421,12 +467,13 @@
           <ol class="toc-list">
             ${g.items.map(({ k, no }) => {
               const dd = day(k);
-              const title = (dd.title || '').trim();
+              const titles = dd.moments.slice().sort((a, b) => a.time - b.time).map(momentLabel).filter(Boolean);
+              const title = titles.join(' · ');
               const d = dateOf(k);
               return `
                 <li><button class="toc-item" data-action="goto-page" data-i="${no}">
                   <span class="toc-date"><b>${d.getDate()}</b><small>${esc(fmt(d, { weekday: 'short' }))}</small></span>
-                  <span class="toc-text ${title ? 'titled' : ''}">${esc(title || t('untitled'))}</span>
+                  <span class="toc-text ${title ? 'titled' : ''}">${esc(title || t('review'))}</span>
                   <i class="mdot-s" style="--c:var(--mood-${dayMood(k)})" aria-hidden="true"></i>
                   <span class="toc-no">${no}</span>
                 </button></li>`;
@@ -442,18 +489,17 @@
     const ms = [...d.moments].sort((a, b) => a.time - b.time);
     const r = d.review;
     const moods = ms.filter(m => m.mood);
-    const title = (d.title || '').trim();
-    const avg = dayMood(k);
+    const feels = [...new Set(ms.map(feelEmoji).filter(Boolean))];
     const notes = REVIEW_FIELDS.filter(f => (r?.[f] || '').trim());
     return `
       <div class="page-content">
         <div class="page-head">
-          <span class="page-weekday">${esc(fmt(dateOf(k), { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' }))}</span>
-          <h2 class="page-title ${title ? '' : 'untitled'}">${esc(title || t('untitled'))}</h2>
+          <span class="page-weekday">${esc(fmt(dateOf(k), { weekday: 'long' }))}</span>
+          <h2 class="page-title">${esc(fmt(dateOf(k), { day: 'numeric', month: 'long', year: 'numeric' }))}</h2>
         </div>
         <div class="facts">
           <div class="fact"><span class="fact-label">${esc(t('momentsHeading'))}</span><span class="fact-val">${ms.length}</span></div>
-          <div class="fact"><span class="fact-label">${esc(t('moodLegend'))}</span><span class="fact-val">${avg ? `<i class="mdot-s" style="--c:var(--mood-${avg})"></i>${esc(t('mood' + avg))}` : '—'}</span></div>
+          <div class="fact"><span class="fact-label">${esc(t('feelingsLabel'))}</span><span class="fact-val fact-emojis">${feels.length ? feels.join(' ') : '—'}</span></div>
           ${moods.length ? `<div class="fact"><span class="fact-label">&nbsp;</span><span class="mood-strip" aria-hidden="true">${moods.map(m => `<i style="--c:var(--mood-${m.mood})"></i>`).join('')}</span></div>` : ''}
         </div>
         ${ms.length ? momentList(ms, true) : ''}
@@ -514,8 +560,10 @@
       const k = keyOf(new Date(m.getFullYear(), m.getMonth(), dnum));
       const has = hasContent(k);
       const future = k > tk;
+      const fm = ui.calFeel ? (day(k)?.moments || []).some(x => x.feel === ui.calFeel) : false;
+      const cls = ui.calFeel ? (fm ? 'match' : 'dim') : '';
       cells += `
-        <button class="cday ${has ? 'has' : ''} ${k === tk ? 'today' : ''}" data-action="open-day" data-k="${k}" ${future ? 'disabled' : ''}
+        <button class="cday ${has ? 'has' : ''} ${cls} ${k === tk ? 'today' : ''}" data-action="open-day" data-k="${k}" ${future ? 'disabled' : ''}
           style="--c:var(--mood-${dayMood(k)}); --i:${dnum}" aria-label="${esc(fmt(dateOf(k), { day: 'numeric', month: 'long' }))}">
           <span>${dnum}</span>${day(k)?.review?.savedAt ? '<i class="rdot" aria-hidden="true"></i>' : ''}
         </button>`;
@@ -538,13 +586,12 @@
           <button class="icon-btn" data-action="next-month" aria-label="${esc(t('nextMonth'))}" ${atCurrent ? 'disabled' : ''}>›</button>
         </div>
         <div class="cal-grid">${cells}</div>
-        <div class="legend">
-          <span class="legend-title">${esc(t('moodLegend'))}</span>
-          <span class="legend-scale">
-            <small>${esc(t('mood1'))}</small>
-            ${[1, 2, 3, 4, 5].map(v => `<i style="--c:var(--mood-${v})" title="${esc(t('mood' + v))}"></i>`).join('')}
-            <small>${esc(t('mood5'))}</small>
-          </span>
+        <div class="cal-filter">
+          <span class="label">${esc(t('calFilter'))}</span>
+          <div class="filter-chips">
+            <button class="fchip ${ui.calFeel ? '' : 'on'}" data-action="cal-feel" data-feel="" aria-pressed="${!ui.calFeel}">${esc(t('filterAll'))}</button>
+            ${FEELS.map(f => `<button class="fchip ${ui.calFeel === f.key ? 'on' : ''}" data-action="cal-feel" data-feel="${f.key}" aria-pressed="${ui.calFeel === f.key}" style="--c:var(--mood-${f.mood})"><i class="mdot-s"></i>${esc(t('feel_' + f.key))}</button>`).join('')}
+          </div>
         </div>
       </section>`;
     const r = `
@@ -564,7 +611,7 @@
     for (const k of Object.keys(state.days).sort().reverse()) {
       const d = state.days[k];
       if ((d.title || '').toLocaleLowerCase().includes(q)) hits.push({ k, text: d.title, mood: dayMood(k) });
-      for (const m of d.moments) { const tx = [m.title, m.text].filter(Boolean).join(' — '); if (tx.toLocaleLowerCase().includes(q)) hits.push({ k, text: tx, mood: m.mood }); }
+      for (const m of d.moments) { const tx = [m.title, m.text, m.feelNote, ...(m.feelWords || [])].filter(Boolean).join(' — '); if (tx.toLocaleLowerCase().includes(q)) hits.push({ k, text: tx, mood: m.mood }); }
       if (d.review) for (const f of REVIEW_FIELDS) {
         const v = d.review[f] || '';
         if (v.toLocaleLowerCase().includes(q)) hits.push({ k, text: v, mood: 0 });
@@ -1045,6 +1092,7 @@
       $$('.seg-corner button').forEach(b => { const on = b.dataset.corner === state.settings.corner; b.classList.toggle('on', on); b.setAttribute('aria-checked', on); });
     },
     'page-next': () => turnPage(1),
+    'cal-feel': el => { ui.calFeel = el.dataset.feel || null; render({ anim: false }); },
     'open-book': () => openBook(),
 
     'toggle-details': el => {
@@ -1054,6 +1102,26 @@
       el.setAttribute('aria-expanded', ui.detailsOpen);
     },
     'pick-mood': el => { ui.draft.mood = toggleChip(el, '.mchips'); updateBadge(); },
+    'pick-feel': el => {
+      const scope = el.dataset.scope;
+      const sel = scope === 'edit' ? ui.editFeel : ui.draftFeel;
+      const key = el.dataset.feel;
+      if (sel.feel === key) { sel.feel = null; sel.words = []; }
+      else { sel.feel = key; sel.words = []; }
+      const box = el.closest('.feel');
+      box.outerHTML = feelPicker(scope, sel);
+      const nb = $(`.feel[data-scope="${scope}"]`);
+      nb?.querySelector('.feel-more')?.classList.add('appear');
+      nb?.querySelector(`[data-feel="${key}"]`)?.focus();
+    },
+    'toggle-word': el => {
+      const sel = el.dataset.scope === 'edit' ? ui.editFeel : ui.draftFeel;
+      const w = el.dataset.word;
+      const i = sel.words.indexOf(w);
+      i >= 0 ? sel.words.splice(i, 1) : sel.words.push(w);
+      el.classList.toggle('on', i < 0);
+      el.setAttribute('aria-pressed', i < 0);
+    },
     'toggle-tag': el => {
       const tag = el.dataset.tag;
       const i = ui.draft.tags.indexOf(tag);
@@ -1065,16 +1133,18 @@
     'save-moment': el => {
       const text = ($('#moment-text')?.value || '').trim();
       const title = ($('#moment-title')?.value || '').trim();
-      if (!text && !title && !ui.draft.mood) { shake($('#composer')); toast(t('writeSomething')); $('#moment-text')?.focus(); return; }
+      const df = ui.draftFeel;
+      if (!text && !title && !df.feel) { shake($('#composer')); toast(t('writeSomething')); $('#moment-text')?.focus(); return; }
       const now = new Date();
       const tv = $('#moment-time')?.value || '';
       let time = now.getTime();
       if (tv && (ui.draft.time || ui.date !== todayKey())) time = timeOn(ui.date, tv);
-      const m = { id: uid(), time, title, text, mood: ui.draft.mood, tags: [...ui.draft.tags] };
+      const m = { id: uid(), time, title, text, mood: df.feel ? FEEL[df.feel].mood : null, feel: df.feel, feelWords: [...df.words], feelNote: df.note.trim(), tags: [...ui.draft.tags] };
       ensureDay(ui.date).moments.push(m);
       persist();
       burst(el);
       ui.draft = { title: '', time: '', text: '', mood: null, tags: [] };
+      ui.draftFeel = { feel: null, words: [], note: '' };
       ui.detailsOpen = false;
       ui.justAdded = m.id;
       render({ anim: false });
@@ -1085,7 +1155,7 @@
       const m = day(ui.date)?.moments.find(x => x.id === el.dataset.id);
       if (!m) return;
       ui.editing = m.id;
-      ui.editMood = m.mood || null;
+      ui.editFeel = { feel: m.feel || null, words: [...(m.feelWords || [])], note: m.feelNote || '' };
       render({ anim: false });
     },
     'edit-mood': el => {
@@ -1098,14 +1168,18 @@
       const text = ($('#edit-text')?.value || '').trim();
       const title = ($('#edit-title')?.value || '').trim();
       if (!m) return;
-      if (!text && !title && !ui.editMood) { shake(el.closest('.mbody')); toast(t('writeSomething')); return; }
+      const ef = ui.editFeel;
+      if (!text && !title && !ef.feel && !m.mood) { shake(el.closest('.mbody')); toast(t('writeSomething')); return; }
       const tv = $('#edit-time')?.value || '';
       const newTime = tv && tv !== hhmm(new Date(m.time)) ? timeOn(ui.date, tv) : m.time;
-      if (text !== m.text || title !== (m.title || '') || ui.editMood !== (m.mood || null) || newTime !== m.time) {
+      const feelChanged = ef.feel !== (m.feel || null) || ef.note.trim() !== (m.feelNote || '') || ef.words.join('|') !== (m.feelWords || []).join('|');
+      if (text !== m.text || title !== (m.title || '') || feelChanged || newTime !== m.time) {
         m.text = text;
         m.title = title;
         m.time = newTime;
-        m.mood = ui.editMood;
+        if (ef.feel || m.feel) { m.feel = ef.feel; m.mood = ef.feel ? FEEL[ef.feel].mood : null; }
+        m.feelWords = ef.feel ? [...ef.words] : [];
+        m.feelNote = ef.note.trim();
         m.editedAt = Date.now();
         persist();
         toast(t('edited'));
@@ -1211,7 +1285,7 @@
           const ids = new Set(cur.moments.map(m => m.id));
           for (const m of (Array.isArray(d.moments) ? d.moments : [])) {
             if (m && m.id && !ids.has(m.id) && typeof m.time === 'number') {
-              cur.moments.push({ id: String(m.id), time: m.time, title: String(m.title || '').slice(0, 80), text: String(m.text || ''), mood: [1, 2, 3, 4, 5].includes(m.mood) ? m.mood : null, tags: Array.isArray(m.tags) ? m.tags.filter(x => TAGS.includes(x)) : [], ...(m.editedAt ? { editedAt: Number(m.editedAt) } : {}) });
+              cur.moments.push({ id: String(m.id), time: m.time, title: String(m.title || '').slice(0, 80), text: String(m.text || ''), feel: FEEL[m.feel] ? m.feel : null, feelWords: Array.isArray(m.feelWords) ? m.feelWords.map(String).slice(0, 12) : [], feelNote: String(m.feelNote || ''), mood: [1, 2, 3, 4, 5].includes(m.mood) ? m.mood : null, tags: Array.isArray(m.tags) ? m.tags.filter(x => TAGS.includes(x)) : [], ...(m.editedAt ? { editedAt: Number(m.editedAt) } : {}) });
             }
           }
           if (d.review && typeof d.review === 'object' && !reviewFilled(cur.review)) cur.review = d.review;
@@ -1240,6 +1314,8 @@
     if (el.id === 'moment-text') ui.draft.text = el.value;
     else if (el.id === 'moment-title') ui.draft.title = el.value;
     else if (el.id === 'moment-time') ui.draft.time = el.value;
+    else if (el.id === 'draft-feelnote') ui.draftFeel.note = el.value;
+    else if (el.id === 'edit-feelnote') ui.editFeel.note = el.value;
     else if (el.id === 'search') runSearch(el.value);
     else if (el.id === 'day-title') { ensureDay(ui.date).title = el.value; cleanup(ui.date); persist(false); }
     else if (el.id === 'name-input') { state.settings.name = el.value.trim(); persist(false); }

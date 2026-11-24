@@ -917,3 +917,63 @@ mark { background: color-mix(in srgb, var(--gold) 35%, transparent); color: inhe
 [data-group="appearance"] .label { margin-top: 18px; }
 [data-group="appearance"] .label:first-of-type { margin-top: 4px; }
 @media (max-width: 380px) { .papers { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+
+/* =================== Gefühle zu jedem Moment =================== */
+.feel { margin: 12px 0 4px; padding-top: 10px; border-top: 1px dashed var(--border-strong); }
+.feel-q { display: block; font-size: 13px; font-weight: 700; color: var(--accent-strong); margin-bottom: 8px; }
+.feel-emojis { display: flex; flex-wrap: wrap; gap: 4px; }
+.femoji {
+  display: inline-flex; flex-direction: column; align-items: center; gap: 2px; min-width: 52px; padding: 6px 4px 5px;
+  border: 1.5px solid transparent; border-radius: 12px; background: transparent;
+  transition: transform 0.25s var(--spring), background 0.2s, border-color 0.2s;
+}
+.femoji .fe { font-size: 26px; line-height: 1; transition: transform 0.3s var(--spring); }
+.femoji .fl { font-size: 11px; font-weight: 600; color: var(--muted); white-space: nowrap; }
+.femoji:hover { background: var(--accent-soft); }
+.femoji:hover .fe { transform: scale(1.15) rotate(-6deg); }
+.femoji.on { background: color-mix(in srgb, var(--c) 45%, var(--paper)); border-color: var(--c); }
+.femoji.on .fe { transform: scale(1.18); animation: wiggle 0.5s var(--spring); }
+.femoji.on .fl { color: var(--text); }
+@keyframes wiggle { 0% { transform: scale(0.8); } 40% { transform: scale(1.3) rotate(10deg); } 70% { transform: scale(1.1) rotate(-6deg); } 100% { transform: scale(1.18); } }
+.feel-more { margin-top: 10px; }
+.feel-more.appear { animation: rise 0.35s var(--ease) both; }
+.feel-hint { display: block; font-size: 12px; color: var(--muted); margin-bottom: 6px; }
+.feel-words { display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 10px; }
+.fword {
+  padding: 4px 11px; border-radius: 999px; border: 1px solid var(--border); background: var(--paper);
+  font-family: var(--serif); font-size: 14px; font-style: italic; color: var(--text);
+  transition: background 0.2s, border-color 0.2s, transform 0.2s var(--spring);
+}
+.fword:hover { transform: translateY(-1px); border-color: var(--border-strong); }
+.fword.on { background: var(--accent); border-color: var(--accent); color: var(--on-accent); font-style: normal; }
+.fword.sm { padding: 1px 9px; font-size: 13px; background: color-mix(in srgb, var(--c) 30%, var(--paper)); border-color: transparent; }
+.feel-note {
+  width: 100%; border: 0; border-bottom: 1px solid var(--border-strong); background: transparent; outline: 0; resize: none;
+  padding: 4px 2px; font-family: var(--serif); font-size: 16px; font-style: italic; color: var(--text); min-height: 32px;
+}
+.feel-note:focus { border-bottom-color: var(--accent); }
+.feel-note::placeholder { color: var(--muted); }
+
+.mfe { flex: 0 0 auto; font-size: 18px; line-height: 1; }
+.m-feel { margin: 4px 0 10px; padding: 8px 10px; border-left: 3px solid var(--c); border-radius: 0 10px 10px 0; background: color-mix(in srgb, var(--c) 14%, transparent); }
+.m-feel-head { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; }
+.m-feel-head .fe { font-size: 20px; line-height: 1; }
+.m-feel-head b { font-size: 14px; margin-right: 4px; }
+.m-feel-note { margin: 6px 0 0; font-family: var(--serif); font-style: italic; font-size: 15px; color: var(--muted); }
+.fact-emojis { font-size: 20px; letter-spacing: 2px; }
+.mitem.editing .feel { border-top-color: var(--border); }
+
+/* Kalender: nach Gefühl filtern */
+.cal-filter { margin-top: 14px; }
+.cal-filter .label { margin: 0 0 8px; }
+.filter-chips { display: flex; flex-wrap: wrap; gap: 6px; }
+.fchip {
+  display: inline-flex; align-items: center; gap: 6px; padding: 5px 11px; border-radius: 999px; border: 1px solid var(--border);
+  background: var(--paper); font-size: 13px; font-weight: 600; color: var(--muted); transition: background 0.2s, border-color 0.2s, color 0.2s;
+}
+.fchip .mdot-s { width: 9px; height: 9px; }
+.fchip:hover { border-color: var(--border-strong); color: var(--text); }
+.fchip.on { background: var(--accent-soft); border-color: var(--accent); color: var(--accent-strong); }
+.cday.dim { opacity: 0.28; }
+.cday.match { box-shadow: 0 0 0 2px var(--accent); transform: scale(1.04); }
+@media (max-width: 380px) { .femoji { min-width: 48px; } .femoji .fe { font-size: 23px; } }
