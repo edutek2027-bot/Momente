@@ -10,24 +10,28 @@
     { code: 'bs', name: 'Bosanski', flag: '🇧🇦' }
   ];
   const LOCALES = { de: 'de-DE', tr: 'tr-TR', en: 'en-GB', bs: 'bs-BA' };
-  const MOODS = [1, 2, 3, 4, 5];
+  const MOODS = [5, 4, 3, 2, 1];
   const MOOD_EMOJI = { 1: '😢', 2: '😕', 3: '😐', 4: '🙂', 5: '😄' };
   const TAGS = ['family', 'friends', 'work', 'school', 'idea', 'health', 'nature', 'gratitude'];
   const TAG_EMOJI = { family: '🏡', friends: '🤝', work: '💼', school: '📚', idea: '💡', health: '💪', nature: '🌳', gratitude: '🙏' };
-  const VIEWS = ['today', 'review', 'calendar', 'settings'];
+  const VIEWS = ['today', 'book', 'review', 'calendar', 'settings'];
   const REVIEW_FIELDS = ['best', 'grateful', 'different', 'intention'];
   const svg = p => `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${p}</svg>`;
   const ICONS = {
     today: svg('<path d="M12 20h9"/><path d="M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4Z"/>'),
+    book: svg('<path d="M2 4h6a4 4 0 0 1 4 4v13a3 3 0 0 0-3-3H2Z"/><path d="M22 4h-6a4 4 0 0 0-4 4v13a3 3 0 0 1 3-3h7Z"/>'),
     review: svg('<path d="M21 12.8A9 9 0 1 1 11.2 3a7 7 0 0 0 9.8 9.8Z"/>'),
     calendar: svg('<rect x="3" y="4" width="18" height="18" rx="3"/><path d="M16 2v4M8 2v4M3 10h18"/>'),
-    settings: svg('<path d="M4 21v-7M4 10V3M12 21v-9M12 8V3M20 21v-5M20 12V3M1 14h6M9 8h6M17 16h6"/>')
+    settings: svg('<path d="M4 21v-7M4 10V3M12 21v-9M12 8V3M20 21v-5M20 12V3M1 14h6M9 8h6M17 16h6"/>'),
+    edit: svg('<path d="M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4Z"/>'),
+    trash: svg('<path d="M3 6h18M8 6V4h8v2M6 6l1 14h10l1-14"/>'),
+    leaf: svg('<path d="M11 20A7 7 0 0 1 9.8 6.1C15.5 5 17 4.5 19 2c1 2 2 4.2 2 8 0 5.5-4.8 10-10 10Z"/><path d="M2 21c0-3 1.9-5.4 5.1-6"/>')
   };
   const LOGO = `
     <svg class="logo" viewBox="0 0 120 120" aria-hidden="true">
-      <defs><linearGradient id="lg" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#ff9a76"/><stop offset="1" stop-color="#8a6cf0"/></linearGradient></defs>
+      <defs><linearGradient id="lg" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#9fd8a8"/><stop offset="1" stop-color="#3d9467"/></linearGradient></defs>
       <circle class="logo-glow" cx="60" cy="60" r="44" fill="url(#lg)"/>
-      <g class="logo-orbit"><circle cx="60" cy="9" r="5" fill="#ffd27a"/></g>
+      <g class="logo-orbit"><circle cx="60" cy="9" r="5" fill="#e9c46a"/></g>
       <path class="logo-spark" fill="#fff" d="M60 32C62 51 69 58 88 60 69 62 62 69 60 88 58 69 51 62 32 60 51 58 58 51 60 32Z"/>
     </svg>`;
 
@@ -43,9 +47,10 @@
   const shiftMonths = (k, n) => { const d = dateOf(k); const day = d.getDate(); d.setDate(1); d.setMonth(d.getMonth() + n); const last = new Date(d.getFullYear(), d.getMonth() + 1, 0).getDate(); d.setDate(Math.min(day, last)); return keyOf(d); };
   const uid = () => Date.now().toString(36) + Math.random().toString(36).slice(2, 7);
   const prefersReduced = () => window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+  const trunc = (s, n) => (s || '').length > n ? s.slice(0, n) + '…' : (s || '');
 
   /* ---------- Zustand ---------- */
-  const defaultState = () => ({ settings: { lang: null, theme: 'auto', young: false, name: '' }, days: {} });
+  const defaultState = () => ({ settings: { lang: null, theme: 'light', young: false, name: '' }, days: {} });
   function load() {
     try {
       const raw = localStorage.getItem(STORE_KEY);
@@ -75,6 +80,10 @@
     date: todayKey(),
     lastToday: todayKey(),
     draft: { text: '', mood: null, tags: [] },
+    detailsOpen: false,
+    editing: null,
+    editMood: null,
+    bookIndex: null,
     calMonth: (() => { const d = new Date(); return new Date(d.getFullYear(), d.getMonth(), 1); })(),
     onbLang: detectLang(),
     justAdded: null
@@ -87,7 +96,9 @@
     const v = dict[key] ?? I18N.en[key] ?? key;
     return typeof v === 'function' ? v(...args) : v;
   }
-  const tq = key => (state.settings.young && I18N[lang()]['y_' + key]) ? t('y_' + key) : t(key);
+  const young = () => !!state.settings.young;
+  const tq = key => (young() && I18N[lang()]['y_' + key]) ? t('y_' + key) : t(key);
+
   // Bosnisch: nicht jeder Browser hat Kalenderdaten für "bs" → eigene Namen als Rückfall
   const BS_SUPPORTED = (() => { try { return Intl.DateTimeFormat.supportedLocalesOf(['bs-BA']).length > 0 && new Intl.DateTimeFormat('bs-BA', { month: 'long' }).format(new Date(2024, 10, 1)).toLowerCase().includes('nov'); } catch (e) { return false; } })();
   const BS_MONTHS = ['januar', 'februar', 'mart', 'april', 'maj', 'juni', 'juli', 'august', 'septembar', 'oktobar', 'novembar', 'decembar'];
@@ -126,7 +137,7 @@
   /* ---------- Datenzugriff ---------- */
   const day = k => state.days[k];
   const ensureDay = k => (state.days[k] ||= { moments: [], review: null });
-  const reviewFilled = r => !!r && (r.savedAt || r.rating || r.word || REVIEW_FIELDS.some(f => (r[f] || '').trim()));
+  const reviewFilled = r => !!r && !!(r.savedAt || r.rating || (r.word || '').trim() || REVIEW_FIELDS.some(f => (r[f] || '').trim()));
   const hasContent = k => { const d = day(k); return !!d && (d.moments.length > 0 || reviewFilled(d.review)); };
   function cleanup(k) { const d = day(k); if (d && !d.moments.length && !reviewFilled(d.review)) delete state.days[k]; }
   function dayMood(k) {
@@ -141,6 +152,7 @@
     while (hasContent(k)) { n++; k = addDays(k, -1); }
     return n;
   }
+  const bookPages = () => Object.keys(state.days).filter(hasContent).sort();
 
   /* ---------- Gemeinsame Bausteine ---------- */
   function dayNav(k) {
@@ -154,17 +166,21 @@
       </div>`;
   }
   const highlightTags = html => html.replace(/(^|\s)(#[\p{L}\p{N}_-]+)/gu, '$1<span class="hash">$2</span>');
+  const moodChips = (action, cur) => MOODS.map(v => `
+    <button class="mchip ${cur === v ? 'on' : ''}" data-action="${action}" data-v="${v}" aria-pressed="${cur === v}" style="--c:var(--mood-${v})">
+      ${young() ? `<span aria-hidden="true">${MOOD_EMOJI[v]}</span>` : '<i class="mdot" aria-hidden="true"></i>'}${esc(t('mood' + v))}
+    </button>`).join('');
+  const tagLabel = tag => `${young() ? TAG_EMOJI[tag] + ' ' : ''}${esc(t('tag_' + tag))}`;
 
   /* ---------- Ansicht: Heute ---------- */
   function memoryCard(k) {
     for (const [label, key] of [[t('agoYear'), shiftMonths(k, -12)], [t('agoMonth'), shiftMonths(k, -1)]]) {
-      const d = day(key);
-      const m = d?.moments.find(x => x.text);
+      const m = day(key)?.moments.find(x => x.text);
       if (m) {
         return `
           <button class="card memory" data-action="open-day" data-k="${key}">
-            <span class="memory-label">🕰️ ${esc(t('memory'))} · ${esc(label)}</span>
-            <span class="memory-text">${m.mood ? MOOD_EMOJI[m.mood] + ' ' : ''}${esc(m.text.length > 120 ? m.text.slice(0, 120) + '…' : m.text)}</span>
+            <span class="memory-label">${esc(t('memory'))} · ${esc(label)}</span>
+            <span class="memory-text">${esc(trunc(m.text, 140))}</span>
           </button>`;
       }
     }
@@ -172,14 +188,33 @@
   }
 
   function momentItem(m, i) {
-    const tags = (m.tags || []).map(tag => `<span class="chip mini">${TAG_EMOJI[tag] || ''} ${esc(t('tag_' + tag))}</span>`).join('');
+    if (ui.editing === m.id) {
+      return `
+        <li class="moment editing" data-id="${m.id}">
+          <div class="m-dot ${ui.editMood ? 'has' : ''}" style="--c:var(--mood-${ui.editMood || 0})"></div>
+          <div class="m-body">
+            <div class="m-meta"><time>${esc(fmtTime(m.time))}</time><span class="m-edit-label">${esc(t('edit'))}</span></div>
+            <textarea id="edit-text" class="lined" rows="2" aria-label="${esc(t('edit'))}">${esc(m.text)}</textarea>
+            <div class="mchips small">${moodChips('edit-mood', ui.editMood)}</div>
+            <div class="edit-actions">
+              <button class="btn ghost sm" data-action="cancel-edit">${esc(t('cancel'))}</button>
+              <button class="btn primary sm" data-action="save-edit" data-id="${m.id}">${esc(t('saveChanges'))}</button>
+            </div>
+          </div>
+        </li>`;
+    }
+    const tags = (m.tags || []).map(tag => `<span class="chip mini">${tagLabel(tag)}</span>`).join('');
     return `
       <li class="moment ${ui.justAdded === m.id ? 'pop' : ''}" data-id="${m.id}" style="--i:${i}">
-        <div class="m-dot" style="--c:var(--mood-${m.mood || 0})" title="${m.mood ? esc(t('mood' + m.mood)) : ''}">${m.mood ? MOOD_EMOJI[m.mood] : '✦'}</div>
+        <div class="m-dot ${m.mood ? 'has' : ''}" style="--c:var(--mood-${m.mood || 0})" title="${m.mood ? esc(t('mood' + m.mood)) : ''}">${m.mood && young() ? MOOD_EMOJI[m.mood] : ''}</div>
         <div class="m-body">
           <div class="m-meta">
-            <time>${esc(fmtTime(m.time))}</time>
-            <button class="icon-btn small ghost" data-action="delete-moment" data-id="${m.id}" aria-label="${esc(t('delete'))}">×</button>
+            <time>${esc(fmtTime(m.time))}${m.editedAt ? ` <span class="m-edited">· ${esc(t('editedLabel'))}</span>` : ''}</time>
+            ${m.mood ? `<span class="m-mood" style="--c:var(--mood-${m.mood})">${esc(t('mood' + m.mood))}</span>` : ''}
+            <span class="m-actions">
+              <button class="icon-btn small ghost" data-action="edit-moment" data-id="${m.id}" aria-label="${esc(t('edit'))}" title="${esc(t('edit'))}">${ICONS.edit}</button>
+              <button class="icon-btn small ghost" data-action="delete-moment" data-id="${m.id}" aria-label="${esc(t('delete'))}" title="${esc(t('delete'))}">${ICONS.trash}</button>
+            </span>
           </div>
           ${m.text ? `<p class="m-text">${highlightTags(esc(m.text))}</p>` : ''}
           ${tags ? `<div class="m-tags">${tags}</div>` : ''}
@@ -193,34 +228,135 @@
     const moments = d ? [...d.moments].sort((a, b) => b.time - a.time) : [];
     const name = state.settings.name.trim();
     const title = isToday
-      ? `${esc(greeting())}${name ? `, <span class="grad">${esc(name)}</span>` : ''}`
+      ? `${esc(greeting())}${name ? `, <span class="accent-text">${esc(name)}</span>` : ''}`
       : esc(fmt(dateOf(k), { weekday: 'long' }));
+    const picked = (ui.draft.mood ? 1 : 0) + ui.draft.tags.length;
     return `
       <header class="hero">
         <p class="eyebrow">${esc(fmt(dateOf(k), { weekday: 'long', day: 'numeric', month: 'long' }))}</p>
         <h1 class="title">${title}</h1>
-        ${isToday ? `<p class="spark"><span class="spark-label">💭 ${esc(t('sparkLabel'))}</span><span>${esc(spark())}</span></p>` : ''}
+        ${isToday ? `<p class="spark"><span class="spark-label">${esc(t('sparkLabel'))}</span><span>${esc(spark())}</span></p>` : ''}
       </header>
       ${dayNav(k)}
       <section class="card composer" id="composer">
-        <textarea id="moment-text" rows="3" placeholder="${esc(tq('placeholder'))}" aria-label="${esc(t('placeholder'))}">${esc(ui.draft.text)}</textarea>
-        <div class="composer-row">
-          <span class="label">${esc(t('howFeel'))}</span>
-          <div class="moods" role="radiogroup" aria-label="${esc(t('howFeel'))}">
-            ${MOODS.map(v => `<button class="mood ${ui.draft.mood === v ? 'on' : ''}" data-action="pick-mood" data-v="${v}" role="radio" aria-checked="${ui.draft.mood === v}" title="${esc(t('mood' + v))}" aria-label="${esc(t('mood' + v))}">${MOOD_EMOJI[v]}</button>`).join('')}
+        <textarea id="moment-text" class="lined" rows="3" placeholder="${esc(tq('placeholder'))}" aria-label="${esc(t('placeholder'))}">${esc(ui.draft.text)}</textarea>
+        <div class="details ${ui.detailsOpen ? 'open' : ''}" id="details">
+          <div class="details-inner">
+            <span class="label">${esc(t('howFeel'))}</span>
+            <div class="mchips" data-group="draft">${moodChips('pick-mood', ui.draft.mood)}</div>
+            <span class="label">${esc(t('topics'))}</span>
+            <div class="tags">
+              ${TAGS.map(tag => `<button class="chip ${ui.draft.tags.includes(tag) ? 'on' : ''}" data-action="toggle-tag" data-tag="${tag}" aria-pressed="${ui.draft.tags.includes(tag)}">${tagLabel(tag)}</button>`).join('')}
+            </div>
           </div>
         </div>
-        <div class="tags">
-          ${TAGS.map(tag => `<button class="chip ${ui.draft.tags.includes(tag) ? 'on' : ''}" data-action="toggle-tag" data-tag="${tag}" aria-pressed="${ui.draft.tags.includes(tag)}">${TAG_EMOJI[tag]} ${esc(t('tag_' + tag))}</button>`).join('')}
+        <div class="composer-actions">
+          <button class="link-btn" data-action="toggle-details" aria-expanded="${ui.detailsOpen}" aria-controls="details">
+            <span class="plus ${ui.detailsOpen ? 'open' : ''}" aria-hidden="true">+</span>${esc(t('addDetails'))}<span class="badge" ${picked ? '' : 'hidden'}>${picked}</span>
+          </button>
+          <button class="btn primary sm" data-action="save-moment">${esc(t('save'))}</button>
         </div>
-        <button class="btn primary" data-action="save-moment">✨ ${esc(t('save'))}</button>
       </section>
       ${memoryCard(k)}
       <h2 class="section-title">${esc(t('momentsCount', moments.length))}</h2>
       ${moments.length
         ? `<ol class="timeline">${moments.map(momentItem).join('')}</ol>`
-        : `<div class="empty"><div class="empty-orb">🌱</div><p>${esc(isToday ? t('emptyDay') : t('emptyPast'))}</p></div>`}
+        : `<div class="empty"><div class="empty-orb">${ICONS.leaf}</div><p>${esc(isToday ? t('emptyDay') : t('emptyPast'))}</p></div>`}
     `;
+  }
+
+  /* ---------- Ansicht: Buch ---------- */
+  function bookPage(k, idx, total) {
+    const d = day(k);
+    const ms = [...d.moments].sort((a, b) => a.time - b.time);
+    const r = d.review;
+    const stars = r?.rating ? '★'.repeat(r.rating) + '☆'.repeat(5 - r.rating) : '';
+    const lines = REVIEW_FIELDS.filter(f => (r?.[f] || '').trim()).map(f => `
+      <p class="pr-line"><span class="pr-label">${esc(tq(f))}</span>${esc(r[f])}</p>`).join('');
+    return `
+      <div class="page-head">
+        <span class="page-weekday">${esc(fmt(dateOf(k), { weekday: 'long' }))}</span>
+        <span class="page-date">${esc(fmt(dateOf(k), { day: 'numeric', month: 'long', year: 'numeric' }))}</span>
+      </div>
+      ${ms.length ? `<ol class="page-lines">
+        ${ms.map(m => `<li><time>${esc(fmtTime(m.time))}</time><span class="pl-text">${m.mood ? `<i class="pl-mood" style="--c:var(--mood-${m.mood})" title="${esc(t('mood' + m.mood))}"></i>` : ''}${highlightTags(esc(m.text || t('mood' + m.mood)))}</span></li>`).join('')}
+      </ol>` : ''}
+      ${reviewFilled(r) ? `
+        <div class="page-review">
+          <h3>${esc(t('review'))}${stars ? ` <span class="pr-stars" aria-label="${r.rating}/5">${stars}</span>` : ''}</h3>
+          ${lines}
+          ${(r.word || '').trim() ? `<p class="page-word">„${esc(r.word)}“</p>` : ''}
+        </div>` : ''}
+      <footer class="page-foot">
+        <button class="link-btn" data-action="open-day" data-k="${k}">${esc(t('openDay'))} →</button>
+        <span class="page-no">${idx + 1}</span>
+      </footer>`;
+  }
+
+  function renderBook() {
+    const pages = bookPages();
+    if (ui.bookIndex === null || ui.bookIndex >= pages.length) ui.bookIndex = pages.length - 1;
+    if (ui.bookIndex < 0) ui.bookIndex = 0;
+    const name = state.settings.name.trim();
+    if (!pages.length) {
+      return `
+        <header class="hero"><p class="eyebrow">Momente</p><h1 class="title">${esc(t('book'))}</h1></header>
+        <div class="book"><article class="book-page cover">
+          ${LOGO}
+          <p class="cover-title">${esc(name ? t('bookOf', name) : t('book'))}</p>
+          <p class="cover-sub">${esc(t('bookEmpty'))}</p>
+        </article></div>`;
+    }
+    const i = ui.bookIndex;
+    return `
+      <header class="hero">
+        <p class="eyebrow">Momente</p>
+        <h1 class="title">${esc(name ? t('bookOf', name) : t('book'))}</h1>
+      </header>
+      <div class="book" id="book">
+        <article class="book-page" id="book-page" aria-live="polite">${bookPage(pages[i], i, pages.length)}</article>
+      </div>
+      <div class="book-nav">
+        <button class="icon-btn" data-action="page-prev" aria-label="${esc(t('prevPage'))}" ${i <= 0 ? 'disabled' : ''}>‹</button>
+        <span class="book-count" id="book-count">${esc(t('page', i + 1, pages.length))}</span>
+        <button class="icon-btn" data-action="page-next" aria-label="${esc(t('nextPage'))}" ${i >= pages.length - 1 ? 'disabled' : ''}>›</button>
+      </div>`;
+  }
+
+  let turning = false;
+  function turnPage(dir) {
+    const pages = bookPages();
+    const next = ui.bookIndex + dir;
+    if (turning || next < 0 || next >= pages.length) return;
+    const page = $('#book-page');
+    const swap = () => {
+      ui.bookIndex = next;
+      page.innerHTML = bookPage(pages[next], next, pages.length);
+      $('#book-count').textContent = t('page', next + 1, pages.length);
+      $('[data-action="page-prev"]').disabled = next <= 0;
+      $('[data-action="page-next"]').disabled = next >= pages.length - 1;
+    };
+    if (prefersReduced()) { swap(); return; }
+    turning = true;
+    page.classList.add(dir > 0 ? 'out-next' : 'out-prev');
+    setTimeout(() => {
+      swap();
+      page.classList.remove('out-next', 'out-prev');
+      page.classList.add(dir > 0 ? 'in-next' : 'in-prev');
+      setTimeout(() => { page.classList.remove('in-next', 'in-prev'); turning = false; }, 480);
+    }, 340);
+  }
+
+  function bindSwipe() {
+    const book = $('#book'); if (!book) return;
+    let x0 = null, y0 = null;
+    book.addEventListener('touchstart', e => { x0 = e.touches[0].clientX; y0 = e.touches[0].clientY; }, { passive: true });
+    book.addEventListener('touchend', e => {
+      if (x0 === null) return;
+      const dx = e.changedTouches[0].clientX - x0, dy = e.changedTouches[0].clientY - y0;
+      if (Math.abs(dx) > 50 && Math.abs(dx) > Math.abs(dy) * 1.3) turnPage(dx < 0 ? 1 : -1);
+      x0 = null;
+    });
   }
 
   /* ---------- Ansicht: Rückblick ---------- */
@@ -247,9 +383,8 @@
           <div class="strip">
             ${moments.map(m => `
               <div class="mini-moment" style="--c:var(--mood-${m.mood || 0})">
-                <span class="mini-emoji">${m.mood ? MOOD_EMOJI[m.mood] : '✦'}</span>
                 <small>${esc(fmtTime(m.time))}</small>
-                <p>${esc((m.text || '').length > 70 ? m.text.slice(0, 70) + '…' : (m.text || ''))}</p>
+                <p>${esc(trunc(m.text || t('mood' + m.mood), 80))}</p>
               </div>`).join('')}
           </div>
         </section>` : ''}
@@ -266,7 +401,7 @@
           <input type="text" data-field="word" maxlength="40" placeholder="${esc(t('wordPlaceholder'))}" value="${esc(r.word || '')}">
         </label>
       </section>
-      <button class="btn primary big" data-action="save-review">🌙 ${esc(t('saveReview'))}</button>
+      <button class="btn primary big" data-action="save-review">${esc(t('saveReview'))}</button>
       ${r.savedAt ? `<p class="done-note">✓ ${esc(t('reviewDone'))} · ${esc(fmtTime(r.savedAt))}</p>` : ''}
     `;
   }
@@ -275,7 +410,7 @@
   function renderCalendar() {
     const m = ui.calMonth;
     const total = Object.values(state.days).reduce((a, d) => a + d.moments.length, 0);
-    const written = Object.keys(state.days).filter(hasContent).length;
+    const written = bookPages().length;
     const first = new Date(m.getFullYear(), m.getMonth(), 1);
     const daysIn = new Date(m.getFullYear(), m.getMonth() + 1, 0).getDate();
     const offset = (first.getDay() + 6) % 7; // Montag zuerst
@@ -286,24 +421,23 @@
     for (let dnum = 1; dnum <= daysIn; dnum++) {
       const k = keyOf(new Date(m.getFullYear(), m.getMonth(), dnum));
       const has = hasContent(k);
-      const mood = dayMood(k);
       const future = k > tk;
       cells += `
         <button class="cday ${has ? 'has' : ''} ${k === tk ? 'today' : ''}" data-action="open-day" data-k="${k}" ${future ? 'disabled' : ''}
-          style="--c:var(--mood-${mood}); --i:${dnum}" aria-label="${esc(fmt(dateOf(k), { day: 'numeric', month: 'long' }))}">
+          style="--c:var(--mood-${dayMood(k)}); --i:${dnum}" aria-label="${esc(fmt(dateOf(k), { day: 'numeric', month: 'long' }))}">
           <span>${dnum}</span>${day(k)?.review?.savedAt ? '<i class="rdot" aria-hidden="true"></i>' : ''}
         </button>`;
     }
-    const nowMonth = new Date(); const atCurrent = m.getFullYear() === nowMonth.getFullYear() && m.getMonth() === nowMonth.getMonth();
+    const now = new Date(); const atCurrent = m.getFullYear() === now.getFullYear() && m.getMonth() === now.getMonth();
     return `
       <header class="hero">
         <p class="eyebrow">${esc(t('calendar'))}</p>
         <h1 class="title">${esc(fmt(m, { month: 'long', year: 'numeric' }))}</h1>
       </header>
       <section class="stats">
-        <div class="stat"><span class="stat-num" data-count="${streak()}">0</span><span class="stat-label">🔥 ${esc(t('streak'))}</span></div>
-        <div class="stat"><span class="stat-num" data-count="${total}">0</span><span class="stat-label">✨ ${esc(t('totalMoments'))}</span></div>
-        <div class="stat"><span class="stat-num" data-count="${written}">0</span><span class="stat-label">📖 ${esc(t('daysWritten'))}</span></div>
+        <div class="stat"><span class="stat-num" data-count="${streak()}">0</span><span class="stat-label">${esc(t('streak'))}</span></div>
+        <div class="stat"><span class="stat-num" data-count="${total}">0</span><span class="stat-label">${esc(t('totalMoments'))}</span></div>
+        <div class="stat"><span class="stat-num" data-count="${written}">0</span><span class="stat-label">${esc(t('daysWritten'))}</span></div>
       </section>
       <section class="card cal">
         <div class="cal-head">
@@ -312,10 +446,17 @@
           <button class="icon-btn" data-action="next-month" aria-label="${esc(t('nextMonth'))}" ${atCurrent ? 'disabled' : ''}>›</button>
         </div>
         <div class="cal-grid">${cells}</div>
-        <div class="legend"><span>${esc(t('moodLegend'))}</span>${MOODS.map(v => `<i style="--c:var(--mood-${v})" title="${esc(t('mood' + v))}">${MOOD_EMOJI[v]}</i>`).join('')}</div>
+        <div class="legend">
+          <span class="legend-title">${esc(t('moodLegend'))}</span>
+          <span class="legend-scale">
+            <small>${esc(t('mood1'))}</small>
+            ${[1, 2, 3, 4, 5].map(v => `<i style="--c:var(--mood-${v})" title="${esc(t('mood' + v))}"></i>`).join('')}
+            <small>${esc(t('mood5'))}</small>
+          </span>
+        </div>
       </section>
       <section class="card">
-        <input type="search" id="search" class="search" placeholder="🔍 ${esc(t('search'))}" aria-label="${esc(t('search'))}">
+        <input type="search" id="search" class="search" placeholder="${esc(t('search'))}" aria-label="${esc(t('search'))}">
         <ul class="results" id="results"></ul>
       </section>
     `;
@@ -331,7 +472,7 @@
       for (const m of d.moments) if ((m.text || '').toLocaleLowerCase().includes(q)) hits.push({ k, text: m.text, mood: m.mood });
       if (d.review) for (const f of [...REVIEW_FIELDS, 'word']) {
         const v = d.review[f] || '';
-        if (v.toLocaleLowerCase().includes(q)) hits.push({ k, text: v, mood: 0, review: true });
+        if (v.toLocaleLowerCase().includes(q)) hits.push({ k, text: v, mood: 0 });
       }
       if (hits.length >= 40) break;
     }
@@ -345,7 +486,7 @@
     };
     box.innerHTML = hits.map((h, i) => `
       <li style="--i:${i}"><button class="result" data-action="open-day" data-k="${h.k}">
-        <span class="result-date">${h.review ? '🌙' : (h.mood ? MOOD_EMOJI[h.mood] : '✦')} ${esc(fmt(dateOf(h.k), { day: 'numeric', month: 'short', year: 'numeric' }))}</span>
+        <span class="result-date"><i class="rdot-inline" style="--c:var(--mood-${h.mood || 0})"></i>${esc(fmt(dateOf(h.k), { day: 'numeric', month: 'short', year: 'numeric' }))}</span>
         <span class="result-text">${mark(h.text)}</span>
       </button></li>`).join('');
   }
@@ -366,38 +507,38 @@
         <h1 class="title">${esc(t('settings'))}</h1>
       </header>
       <section class="card">
-        <h2 class="h2">🌍 ${esc(t('language'))}</h2>
+        <h2 class="h2">${esc(t('language'))}</h2>
         <div class="langs">${langCards('set-lang', s.lang)}</div>
       </section>
       <section class="card">
-        <h2 class="h2">🎨 ${esc(t('appearance'))}</h2>
+        <h2 class="h2">${esc(t('appearance'))}</h2>
         <div class="seg" role="radiogroup">
-          ${['auto', 'light', 'dark'].map(th => `<button class="${s.theme === th ? 'on' : ''}" data-action="set-theme" data-theme="${th}" role="radio" aria-checked="${s.theme === th}">${{ auto: '🌗', light: '☀️', dark: '🌙' }[th]} ${esc(t('theme' + th[0].toUpperCase() + th.slice(1)))}</button>`).join('')}
+          ${['light', 'dark', 'auto'].map(th => `<button class="${s.theme === th ? 'on' : ''}" data-action="set-theme" data-theme="${th}" role="radio" aria-checked="${s.theme === th}">${esc(t('theme' + th[0].toUpperCase() + th.slice(1)))}</button>`).join('')}
         </div>
       </section>
       <section class="card">
-        <h2 class="h2">👤 ${esc(t('profile'))}</h2>
+        <h2 class="h2">${esc(t('profile'))}</h2>
         <label class="field">
           <span class="field-label">${esc(t('nameLabel'))}</span>
           <input type="text" id="name-input" maxlength="30" value="${esc(s.name)}" autocomplete="given-name">
         </label>
         <label class="switch-row">
-          <span><strong>🧒 ${esc(t('youngMode'))}</strong><small>${esc(t('youngDesc'))}</small></span>
+          <span><strong>${esc(t('youngMode'))}</strong><small>${esc(t('youngDesc'))}</small></span>
           <input type="checkbox" class="switch" id="young-toggle" ${s.young ? 'checked' : ''}>
         </label>
       </section>
       <section class="card">
-        <h2 class="h2">🔒 ${esc(t('data'))}</h2>
+        <h2 class="h2">${esc(t('data'))}</h2>
         <p class="muted">${esc(t('privacy'))}</p>
         <div class="btn-row">
-          <button class="btn soft" data-action="export">⬇️ ${esc(t('export'))}</button>
-          <button class="btn soft" data-action="import">⬆️ ${esc(t('import'))}</button>
+          <button class="btn soft" data-action="export">${esc(t('export'))}</button>
+          <button class="btn soft" data-action="import">${esc(t('import'))}</button>
         </div>
         <input type="file" id="import-file" accept="application/json,.json" hidden>
-        <button class="btn danger" data-action="wipe">🗑️ ${esc(t('wipe'))}</button>
+        <button class="btn danger" data-action="wipe">${esc(t('wipe'))}</button>
       </section>
-      <p class="muted center small">📱 ${esc(t('installTip'))}</p>
-      <p class="muted center small">Momente · v1.0</p>
+      <p class="muted center small">${esc(t('installTip'))}</p>
+      <p class="muted center small">Momente · v1.1</p>
     `;
   }
 
@@ -425,8 +566,7 @@
       VIEWS.map(v => `<button class="nav-btn" data-action="nav" data-v="${v}">${ICONS[v]}<span class="nav-label"></span></button>`).join('');
   }
   function updateNav() {
-    const idx = VIEWS.indexOf(ui.view);
-    $('#nav').style.setProperty('--idx', idx);
+    $('#nav').style.setProperty('--idx', VIEWS.indexOf(ui.view));
     $$('.nav-btn').forEach(b => {
       const on = b.dataset.v === ui.view;
       b.classList.toggle('on', on);
@@ -436,7 +576,7 @@
   }
 
   function render({ anim = true } = {}) {
-    const html = { today: renderToday, review: renderReview, calendar: renderCalendar, settings: renderSettings }[ui.view]();
+    const html = { today: renderToday, book: renderBook, review: renderReview, calendar: renderCalendar, settings: renderSettings }[ui.view]();
     $('#app').innerHTML = `<div class="view ${anim ? 'enter' : ''}">${html}</div>`;
     document.documentElement.lang = lang();
     document.title = `Momente · ${t(ui.view)}`;
@@ -444,12 +584,17 @@
     ui.justAdded = null;
     $$('textarea').forEach(autosize);
     if (ui.view === 'calendar') countUp(anim);
+    if (ui.view === 'book') bindSwipe();
+    const edit = $('#edit-text');
+    if (edit) { edit.focus(); edit.setSelectionRange(edit.value.length, edit.value.length); }
     if (anim) window.scrollTo({ top: 0, behavior: prefersReduced() ? 'auto' : 'smooth' });
   }
 
   function go(view) {
     if (view === ui.view) return;
     ui.view = view;
+    ui.editing = null;
+    if (view === 'book') ui.bookIndex = null;
     render();
   }
 
@@ -470,21 +615,20 @@
     });
   }
 
-  function burst(target, symbols = ['✨', '💛', '⭐', '🌸', '✦']) {
+  // Kleine Blätter fliegen beim Speichern auf
+  function burst(target) {
     if (prefersReduced() || !target) return;
     const r = target.getBoundingClientRect();
     const cx = r.left + r.width / 2, cy = r.top + r.height / 2;
-    for (let i = 0; i < 14; i++) {
+    const colors = ['#3d9467', '#7cc895', '#b6dfbd', '#e9c46a', '#5fae7f'];
+    for (let i = 0; i < 16; i++) {
       const p = document.createElement('span');
       p.className = 'particle';
-      p.textContent = symbols[i % symbols.length];
-      const ang = (Math.PI * 2 * i) / 14 + Math.random() * 0.4;
-      const dist = 70 + Math.random() * 70;
-      p.style.left = cx + 'px';
-      p.style.top = cy + 'px';
-      p.style.setProperty('--dx', Math.cos(ang) * dist + 'px');
-      p.style.setProperty('--dy', Math.sin(ang) * dist - 40 + 'px');
-      p.style.setProperty('--rot', (Math.random() * 360 - 180) + 'deg');
+      const ang = (Math.PI * 2 * i) / 16 + Math.random() * 0.4;
+      const dist = 60 + Math.random() * 70;
+      const size = 6 + Math.random() * 7;
+      p.style.cssText = `left:${cx}px;top:${cy}px;width:${size}px;height:${size}px;background:${colors[i % colors.length]};` +
+        `--dx:${Math.cos(ang) * dist}px;--dy:${Math.sin(ang) * dist - 40}px;--rot:${Math.random() * 360 - 180}deg`;
       document.body.appendChild(p);
       p.addEventListener('animationend', () => p.remove());
     }
@@ -495,7 +639,7 @@
     el.className = 'celebrate';
     const stars = Array.from({ length: 18 }, () =>
       `<i style="left:${Math.random() * 100}%;top:${Math.random() * 100}%;animation-delay:${(Math.random() * 1.2).toFixed(2)}s">✦</i>`).join('');
-    el.innerHTML = `<div class="cel-stars">${stars}</div><div class="cel-moon">🌙</div><p class="cel-text">${esc(text)}</p>`;
+    el.innerHTML = `<div class="cel-stars">${stars}</div><div class="cel-moon" aria-hidden="true"></div><p class="cel-text">${esc(text)}</p>`;
     document.body.appendChild(el);
     const close = () => { el.classList.add('out'); setTimeout(() => el.remove(), 500); };
     el.addEventListener('click', close);
@@ -550,36 +694,53 @@
     if (th === 'auto') delete document.documentElement.dataset.theme;
     else document.documentElement.dataset.theme = th;
     const dark = th === 'dark' || (th === 'auto' && window.matchMedia('(prefers-color-scheme: dark)').matches);
-    $('meta[name="theme-color"]').setAttribute('content', dark ? '#17131d' : '#fbf5ee');
+    $('meta[name="theme-color"]')?.setAttribute('content', dark ? '#121a15' : '#f4f8f2');
   }
 
   /* ---------- Aktionen ---------- */
+  function toggleChip(el, groupSel) {
+    const v = Number(el.dataset.v);
+    const box = el.closest(groupSel);
+    let cur = null;
+    $$('.mchip', box).forEach(b => {
+      const on = b === el && !b.classList.contains('on');
+      b.classList.toggle('on', on);
+      b.setAttribute('aria-pressed', on);
+      if (on) cur = v;
+    });
+    return cur;
+  }
+  function updateBadge() {
+    const n = (ui.draft.mood ? 1 : 0) + ui.draft.tags.length;
+    const b = $('.composer .badge');
+    if (b) { b.textContent = n; b.hidden = !n; }
+  }
+
   const actions = {
     nav: el => go(el.dataset.v),
-    'prev-day': () => { ui.date = addDays(ui.date, -1); render(); },
-    'next-day': () => { if (ui.date < todayKey()) { ui.date = addDays(ui.date, 1); render(); } },
-    'go-today': () => { ui.date = todayKey(); render(); },
-    'open-day': el => { ui.date = el.dataset.k; ui.view = 'today'; render(); },
+    'prev-day': () => { ui.date = addDays(ui.date, -1); ui.editing = null; render(); },
+    'next-day': () => { if (ui.date < todayKey()) { ui.date = addDays(ui.date, 1); ui.editing = null; render(); } },
+    'go-today': () => { ui.date = todayKey(); ui.editing = null; render(); },
+    'open-day': el => { ui.date = el.dataset.k; ui.view = 'today'; ui.editing = null; render(); },
 
-    'pick-mood': el => {
-      const v = Number(el.dataset.v);
-      ui.draft.mood = ui.draft.mood === v ? null : v;
-      $$('.mood').forEach(b => {
-        const on = Number(b.dataset.v) === ui.draft.mood;
-        b.classList.toggle('on', on);
-        b.setAttribute('aria-checked', on);
-      });
+    'toggle-details': el => {
+      ui.detailsOpen = !ui.detailsOpen;
+      $('#details').classList.toggle('open', ui.detailsOpen);
+      $('.plus', el).classList.toggle('open', ui.detailsOpen);
+      el.setAttribute('aria-expanded', ui.detailsOpen);
     },
+    'pick-mood': el => { ui.draft.mood = toggleChip(el, '.mchips'); updateBadge(); },
     'toggle-tag': el => {
       const tag = el.dataset.tag;
       const i = ui.draft.tags.indexOf(tag);
       i >= 0 ? ui.draft.tags.splice(i, 1) : ui.draft.tags.push(tag);
       el.classList.toggle('on', i < 0);
       el.setAttribute('aria-pressed', i < 0);
+      updateBadge();
     },
     'save-moment': el => {
       const text = ($('#moment-text')?.value || '').trim();
-      if (!text && !ui.draft.mood) { shake($('#composer')); toast(t('writeSomething')); return; }
+      if (!text && !ui.draft.mood) { shake($('#composer')); toast(t('writeSomething')); $('#moment-text')?.focus(); return; }
       const now = new Date();
       let time = now.getTime();
       if (ui.date !== todayKey()) { const d = dateOf(ui.date); d.setHours(now.getHours(), now.getMinutes()); time = d.getTime(); }
@@ -588,9 +749,40 @@
       persist();
       burst(el);
       ui.draft = { text: '', mood: null, tags: [] };
+      ui.detailsOpen = false;
       ui.justAdded = m.id;
       render({ anim: false });
       toast(t('saved'));
+    },
+
+    'edit-moment': el => {
+      const m = day(ui.date)?.moments.find(x => x.id === el.dataset.id);
+      if (!m) return;
+      ui.editing = m.id;
+      ui.editMood = m.mood || null;
+      render({ anim: false });
+    },
+    'edit-mood': el => {
+      ui.editMood = toggleChip(el, '.mchips');
+      const dot = el.closest('.moment')?.querySelector('.m-dot');
+      if (dot) { dot.style.setProperty('--c', `var(--mood-${ui.editMood || 0})`); dot.classList.toggle('has', !!ui.editMood); }
+    },
+    'cancel-edit': () => { ui.editing = null; render({ anim: false }); },
+    'save-edit': el => {
+      const m = day(ui.date)?.moments.find(x => x.id === el.dataset.id);
+      const text = ($('#edit-text')?.value || '').trim();
+      if (!m) return;
+      if (!text && !ui.editMood) { shake(el.closest('.m-body')); toast(t('writeSomething')); return; }
+      if (text !== m.text || ui.editMood !== (m.mood || null)) {
+        m.text = text;
+        m.mood = ui.editMood;
+        m.editedAt = Date.now();
+        persist();
+        toast(t('edited'));
+      }
+      ui.editing = null;
+      ui.justAdded = m.id;
+      render({ anim: false });
     },
     'delete-moment': async el => {
       if (!(await ask(t('confirmDelete'), t('delete')))) return;
@@ -603,6 +795,9 @@
       };
       if (li && !prefersReduced()) { li.classList.add('leaving'); setTimeout(finish, 380); } else finish();
     },
+
+    'page-prev': () => turnPage(-1),
+    'page-next': () => turnPage(1),
 
     rate: el => {
       const v = Number(el.dataset.v);
@@ -622,7 +817,7 @@
       d.review = { ...(d.review || {}), savedAt: Date.now() };
       $$('[data-field]').forEach(f => { d.review[f.dataset.field] = f.value; });
       persist();
-      burst(el, ['⭐', '✦', '🌟', '💫']);
+      burst(el);
       celebrate(t('reviewSaved'));
       render({ anim: false });
     },
@@ -630,11 +825,7 @@
     'prev-month': () => { ui.calMonth = new Date(ui.calMonth.getFullYear(), ui.calMonth.getMonth() - 1, 1); render({ anim: false }); animateGrid(); },
     'next-month': () => { ui.calMonth = new Date(ui.calMonth.getFullYear(), ui.calMonth.getMonth() + 1, 1); render({ anim: false }); animateGrid(); },
 
-    'set-lang': el => {
-      state.settings.lang = el.dataset.lang;
-      persist();
-      render();
-    },
+    'set-lang': el => { state.settings.lang = el.dataset.lang; persist(); render(); },
     'set-theme': el => {
       state.settings.theme = el.dataset.theme;
       persist();
@@ -694,7 +885,7 @@
           const ids = new Set(cur.moments.map(m => m.id));
           for (const m of (Array.isArray(d.moments) ? d.moments : [])) {
             if (m && m.id && !ids.has(m.id) && typeof m.time === 'number') {
-              cur.moments.push({ id: String(m.id), time: m.time, text: String(m.text || ''), mood: MOODS.includes(m.mood) ? m.mood : null, tags: Array.isArray(m.tags) ? m.tags.filter(x => TAGS.includes(x)) : [] });
+              cur.moments.push({ id: String(m.id), time: m.time, text: String(m.text || ''), mood: [1, 2, 3, 4, 5].includes(m.mood) ? m.mood : null, tags: Array.isArray(m.tags) ? m.tags.filter(x => TAGS.includes(x)) : [], ...(m.editedAt ? { editedAt: Number(m.editedAt) } : {}) });
             }
           }
           if (d.review && typeof d.review === 'object' && !reviewFilled(cur.review)) cur.review = d.review;
@@ -736,9 +927,13 @@
   });
 
   document.addEventListener('keydown', e => {
-    if (e.target.id === 'moment-text' && e.key === 'Enter' && (e.metaKey || e.ctrlKey)) {
-      e.preventDefault();
-      actions['save-moment']($('[data-action="save-moment"]'));
+    const mod = e.key === 'Enter' && (e.metaKey || e.ctrlKey);
+    if (e.target.id === 'moment-text' && mod) { e.preventDefault(); actions['save-moment']($('[data-action="save-moment"]')); }
+    else if (e.target.id === 'edit-text' && mod) { e.preventDefault(); actions['save-edit']($('[data-action="save-edit"]')); }
+    else if (e.target.id === 'edit-text' && e.key === 'Escape') actions['cancel-edit']();
+    else if (ui.view === 'book' && !/INPUT|TEXTAREA/.test(e.target.tagName) && !$('.modal')) {
+      if (e.key === 'ArrowRight') turnPage(1);
+      if (e.key === 'ArrowLeft') turnPage(-1);
     }
   });
 
@@ -761,7 +956,7 @@
   render();
   if (!state.settings.lang) renderOnboarding();
 
-  if ('serviceWorker' in navigator && /^https?:$/.test(location.protocol)) {
+  if ('serviceWorker' in navigator && /^https?:$/.test(location.protocol) && window.self === window.top) {
     window.addEventListener('load', () => navigator.serviceWorker.register('sw.js').catch(() => {}));
   }
 })();
