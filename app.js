@@ -84,7 +84,8 @@
     view: 'today',
     date: todayKey(),
     lastToday: todayKey(),
-    draft: { text: '', mood: null, tags: [] },
+    draft: { title: '', text: '', mood: null, tags: [] },
+    openMoments: new Set(),
     detailsOpen: false,
     editing: null,
     editMood: null,
@@ -206,25 +207,33 @@
   /* ---------- Bereich: Heute ---------- */
   function memoryCard(k) {
     for (const [label, key] of [[t('agoYear'), shiftMonths(k, -12)], [t('agoMonth'), shiftMonths(k, -1)]]) {
-      const m = day(key)?.moments.find(x => x.text);
+      const m = day(key)?.moments.find(x => x.text || x.title);
       if (m) {
         return `
           <button class="memory" data-action="open-day" data-k="${key}">
             <span class="memory-label">${esc(t('memory'))} · ${esc(label)}</span>
-            <span class="memory-text">${esc(trunc(m.text, 140))}</span>
+            <span class="memory-text">${esc(trunc(m.title || m.text, 140))}</span>
           </button>`;
       }
     }
     return '';
   }
 
-  function momentItem(m, i) {
-    if (ui.editing === m.id) {
+  const momentLabel = m => (m.title || '').trim() || trunc((m.text || '').split('\n')[0], 60) || (m.mood ? t('mood' + m.mood) : '');
+
+  // Nummerierte, aufklappbare Liste der Momente (Heute und Buchseiten)
+  function momentList(list, readOnly = false) {
+    return `<ol class="mlist">${list.map((m, i) => momentItem(m, i, readOnly)).join('')}</ol>`;
+  }
+
+  function momentItem(m, i, readOnly) {
+    const num = `<span class="mnum">${i + 1}</span>`;
+    if (!readOnly && ui.editing === m.id) {
       return `
-        <li class="moment editing" data-id="${m.id}">
-          <div class="m-dot ${ui.editMood ? 'has' : ''}" style="--c:var(--mood-${ui.editMood || 0})"></div>
-          <div class="m-body">
-            <div class="m-meta"><time>${esc(fmtTime(m.time))}</time><span class="m-edit-label">${esc(t('edit'))}</span></div>
+        <li class="mitem open editing" data-id="${m.id}">
+          <div class="mhead static">${num}<span class="mtitle">${esc(t('edit'))}</span><time class="mtime">${esc(fmtTime(m.time))}</time></div>
+          <div class="mbody">
+            <input id="edit-title" class="moment-title" type="text" maxlength="80" placeholder="${esc(t('momentTitlePh'))}" value="${esc(m.title || '')}">
             <textarea id="edit-text" class="lined" rows="2" aria-label="${esc(t('edit'))}">${esc(m.text)}</textarea>
             <div class="mchips small">${moodChips('edit-mood', ui.editMood)}</div>
             <div class="edit-actions">
@@ -234,21 +243,33 @@
           </div>
         </li>`;
     }
+    const open = ui.openMoments.has(m.id);
     const tags = (m.tags || []).map(tag => `<span class="chip mini">${tagLabel(tag)}</span>`).join('');
+    const hasTitle = !!(m.title || '').trim();
     return `
-      <li class="moment ${ui.justAdded === m.id ? 'pop' : ''}" data-id="${m.id}" style="--i:${i}">
-        <div class="m-dot ${m.mood ? 'has' : ''}" style="--c:var(--mood-${m.mood || 0})" title="${m.mood ? esc(t('mood' + m.mood)) : ''}">${m.mood && young() ? MOOD_EMOJI[m.mood] : ''}</div>
-        <div class="m-body">
-          <div class="m-meta">
-            <time>${esc(fmtTime(m.time))}${m.editedAt ? ` <span class="m-edited">· ${esc(t('editedLabel'))}</span>` : ''}</time>
-            ${m.mood ? `<span class="m-mood" style="--c:var(--mood-${m.mood})">${esc(t('mood' + m.mood))}</span>` : ''}
-            <span class="m-actions">
-              <button class="icon-btn small ghost" data-action="edit-moment" data-id="${m.id}" aria-label="${esc(t('edit'))}" title="${esc(t('edit'))}">${ICONS.edit}</button>
-              <button class="icon-btn small ghost" data-action="delete-moment" data-id="${m.id}" aria-label="${esc(t('delete'))}" title="${esc(t('delete'))}">${ICONS.trash}</button>
-            </span>
+      <li class="mitem ${open ? 'open' : ''} ${ui.justAdded === m.id ? 'pop' : ''}" data-id="${m.id}" style="--i:${i}">
+        <button class="mhead" data-action="toggle-moment" data-id="${m.id}" aria-expanded="${open}">
+          ${num}
+          <span class="mtitle ${hasTitle ? '' : 'plain'}">${esc(momentLabel(m))}</span>
+          ${m.mood ? `<i class="mdot-s" style="--c:var(--mood-${m.mood})" title="${esc(t('mood' + m.mood))}"></i>` : ''}
+          <time class="mtime">${esc(fmtTime(m.time))}</time>
+          <span class="chev" aria-hidden="true">⌄</span>
+        </button>
+        <div class="details ${open ? 'open' : ''}">
+          <div class="details-inner">
+            <div class="mbody">
+              ${m.text ? `<p class="m-text">${highlightTags(esc(m.text))}</p>` : ''}
+              ${(m.mood || tags) ? `<div class="m-tags">${m.mood ? `<span class="m-mood" style="--c:var(--mood-${m.mood})">${young() ? MOOD_EMOJI[m.mood] + ' ' : ''}${esc(t('mood' + m.mood))}</span>` : ''}${tags}</div>` : ''}
+              ${readOnly ? '' : `
+                <div class="m-foot">
+                  ${m.editedAt ? `<span class="m-edited">${esc(t('editedLabel'))}</span>` : '<span></span>'}
+                  <span class="m-actions">
+                    <button class="icon-btn small ghost" data-action="edit-moment" data-id="${m.id}" aria-label="${esc(t('edit'))}" title="${esc(t('edit'))}">${ICONS.edit}</button>
+                    <button class="icon-btn small ghost" data-action="delete-moment" data-id="${m.id}" aria-label="${esc(t('delete'))}" title="${esc(t('delete'))}">${ICONS.trash}</button>
+                  </span>
+                </div>`}
+            </div>
           </div>
-          ${m.text ? `<p class="m-text">${highlightTags(esc(m.text))}</p>` : ''}
-          ${tags ? `<div class="m-tags">${tags}</div>` : ''}
         </div>
       </li>`;
   }
@@ -256,7 +277,7 @@
   function renderToday() {
     const k = ui.date, isToday = k === todayKey();
     const d = day(k);
-    const moments = d ? [...d.moments].sort((a, b) => b.time - a.time) : [];
+    const moments = d ? [...d.moments].sort((a, b) => a.time - b.time) : [];
     const name = state.settings.name.trim();
     const title = isToday
       ? `${esc(greeting())}${name ? `, <span class="accent-text">${esc(name)}</span>` : ''}`
@@ -269,8 +290,12 @@
         ${isToday ? dailyCorner() : ''}
       </header>
       ${dayNav(k)}
-      <input id="day-title" class="day-title" type="text" maxlength="80" placeholder="${esc(t('titlePlaceholder'))}" aria-label="${esc(t('titlePlaceholder'))}" value="${esc(d?.title || '')}">
+      <label class="day-title-wrap">
+        <span class="mini-label">${esc(t('dayTitleLabel'))}</span>
+        <input id="day-title" class="day-title" type="text" maxlength="80" placeholder="${esc(t('titlePlaceholder'))}" value="${esc(d?.title || '')}">
+      </label>
       <section class="composer" id="composer">
+        <input id="moment-title" class="moment-title" type="text" maxlength="80" placeholder="${esc(t('momentTitlePh'))}" aria-label="${esc(t('momentTitlePh'))}" value="${esc(ui.draft.title)}">
         <textarea id="moment-text" class="lined" rows="4" placeholder="${esc(tq('placeholder'))}" aria-label="${esc(t('placeholder'))}">${esc(ui.draft.text)}</textarea>
         <div class="details ${ui.detailsOpen ? 'open' : ''}" id="details">
           <div class="details-inner">
@@ -291,9 +316,9 @@
       </section>
       ${memoryCard(k)}`;
     const r = `
-      ${heading(t('momentsCount', moments.length))}
+      <h2 class="h2"><span>${esc(t('momentsHeading'))}</span>${moments.length ? `<em class="h2-count">${moments.length}</em>` : ''}</h2>
       ${moments.length
-        ? `<ol class="timeline">${moments.map(momentItem).join('')}</ol>`
+        ? momentList(moments)
         : `<div class="empty"><div class="empty-orb">${ICONS.leaf}</div><p>${esc(isToday ? t('emptyDay') : t('emptyPast'))}</p></div>`}
       ${reviewPanel(k)}`;
     return { l, r };
@@ -368,61 +393,62 @@
 
   function tocPage(list) {
     const days = list.slice(1);
-    let html = `<div class="page-content"><h2 class="toc-title">${esc(t('toc'))}</h2>${miniCalendar(list)}`;
-    if (!days.length) {
-      return html + `<div class="empty"><p>${esc(t('bookEmpty'))}</p></div><div class="ruled-fill" aria-hidden="true"></div></div>`;
-    }
-    let month = '';
+    let html = `<div class="page-content toc"><h2 class="toc-title">${esc(t('toc'))}</h2>${miniCalendar(list)}`;
+    if (!days.length) return html + `<div class="empty"><p>${esc(t('bookEmpty'))}</p></div></div>`;
+    const groups = [];
     days.forEach((k, i) => {
-      const d = dateOf(k);
       const mKey = k.slice(0, 7);
-      if (mKey !== month) {
-        if (month) html += '</ol>';
-        month = mKey;
-        html += `<h3 class="toc-month">${esc(fmt(d, { month: 'long', year: 'numeric' }))}</h3><ol class="toc-list">`;
-      }
-      const dd = day(k);
-      const first = dd.moments.slice().sort((a, b) => a.time - b.time).find(m => m.text)?.text || dd.review?.word || '';
-      const label = (dd.title || '').trim();
-      html += `
-        <li><button class="toc-item" data-action="goto-page" data-i="${i + 1}">
-          <span class="toc-day">${d.getDate()}</span>
-          <span class="toc-text ${label ? 'titled' : ''}">${esc(trunc(label || first, 60))}</span>
-          <span class="toc-no">${i + 1}</span>
-        </button></li>`;
+      if (!groups.length || groups[groups.length - 1].key !== mKey) groups.push({ key: mKey, items: [] });
+      groups[groups.length - 1].items.push({ k, no: i + 1 });
     });
-    return html + '</ol><div class="ruled-fill" aria-hidden="true"></div></div>';
+    for (const g of groups) {
+      html += `
+        <section class="toc-group">
+          <h3 class="toc-month"><span>${esc(fmt(dateOf(g.items[0].k), { month: 'long', year: 'numeric' }))}</span><small>${esc(t('daysCount', g.items.length))}</small></h3>
+          <ol class="toc-list">
+            ${g.items.map(({ k, no }) => {
+              const dd = day(k);
+              const title = (dd.title || '').trim();
+              const d = dateOf(k);
+              return `
+                <li><button class="toc-item" data-action="goto-page" data-i="${no}">
+                  <span class="toc-date"><b>${d.getDate()}</b><small>${esc(fmt(d, { weekday: 'short' }))}</small></span>
+                  <span class="toc-text ${title ? 'titled' : ''}">${esc(title || t('untitled'))}</span>
+                  <i class="mdot-s" style="--c:var(--mood-${dayMood(k)})" aria-hidden="true"></i>
+                  <span class="toc-no">${no}</span>
+                </button></li>`;
+            }).join('')}
+          </ol>
+        </section>`;
+    }
+    return html + '</div>';
   }
 
   function dayPage(k, no) {
     const d = day(k);
     const ms = [...d.moments].sort((a, b) => a.time - b.time);
     const r = d.review;
-    const stars = r?.rating ? '★'.repeat(r.rating) + '☆'.repeat(5 - r.rating) : '';
     const moods = ms.filter(m => m.mood);
-    const lines = REVIEW_FIELDS.filter(f => (r?.[f] || '').trim()).map(f => `
-      <p class="pr-line"><span class="pr-label">${esc(tq(f))}</span>${esc(r[f])}</p>`).join('');
     const title = (d.title || '').trim();
+    const best = (r?.best || '').trim();
+    const word = (r?.word || '').trim();
+    const avg = dayMood(k);
+    const facts = [
+      avg ? `<div class="fact"><span class="fact-label">${esc(t('moodLegend'))}</span><span class="fact-val"><i class="mdot-s" style="--c:var(--mood-${avg})"></i>${esc(t('mood' + avg))}</span></div>` : '',
+      r?.rating ? `<div class="fact"><span class="fact-label">${esc(t('ratingShort'))}</span><span class="fact-val stars-s" aria-label="${r.rating}/5">${'★'.repeat(r.rating)}<span class="off">${'★'.repeat(5 - r.rating)}</span></span></div>` : '',
+      `<div class="fact"><span class="fact-label">${esc(t('momentsHeading'))}</span><span class="fact-val">${ms.length}</span></div>`
+    ].join('');
     return `
       <div class="page-content">
         <div class="page-head">
           <span class="page-weekday">${esc(fmt(dateOf(k), { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' }))}</span>
           <h2 class="page-title ${title ? '' : 'untitled'}">${esc(title || t('untitled'))}</h2>
-          <div class="page-meta">
-            ${moods.length ? `<span class="mood-strip" aria-hidden="true">${moods.map(m => `<i style="--c:var(--mood-${m.mood})"></i>`).join('')}</span>` : ''}
-            ${stars ? `<span class="pr-stars" aria-label="${r.rating}/5">${stars}</span>` : ''}
-            <span>${esc(t('momentsCount', ms.length))}</span>
-          </div>
+          ${moods.length ? `<span class="mood-strip" aria-hidden="true">${moods.map(m => `<i style="--c:var(--mood-${m.mood})"></i>`).join('')}</span>` : ''}
         </div>
-        ${ms.length ? `<ol class="page-lines">
-          ${ms.map(m => `<li><time>${esc(fmtTime(m.time))}</time><span class="pl-text">${m.mood ? `<i class="pl-mood" style="--c:var(--mood-${m.mood})" title="${esc(t('mood' + m.mood))}"></i>` : ''}${highlightTags(esc(m.text || t('mood' + m.mood)))}</span></li>`).join('')}
-        </ol>` : ''}
-        ${reviewFilled(r) ? `
-          <div class="page-review">
-            <h3>${esc(t('review'))}</h3>
-            ${lines}
-            ${(r.word || '').trim() ? `<p class="page-word">„${esc(r.word)}“</p>` : ''}
-          </div>` : ''}
+        ${word ? `<p class="page-word">„${esc(word)}“</p>` : ''}
+        <div class="facts">${facts}</div>
+        ${best ? `<p class="page-best"><span class="pr-label">${esc(tq('best'))}</span>${esc(best)}</p>` : ''}
+        ${ms.length ? `<h3 class="page-sub">${esc(t('momentsHeading'))}</h3>${momentList(ms, true)}` : ''}
         <div class="ruled-fill" aria-hidden="true"></div>
         <footer class="page-foot">
           <button class="link-btn" data-action="open-day" data-k="${k}">${esc(t('openDay'))} →</button>
@@ -525,7 +551,7 @@
     for (const k of Object.keys(state.days).sort().reverse()) {
       const d = state.days[k];
       if ((d.title || '').toLocaleLowerCase().includes(q)) hits.push({ k, text: d.title, mood: dayMood(k) });
-      for (const m of d.moments) if ((m.text || '').toLocaleLowerCase().includes(q)) hits.push({ k, text: m.text, mood: m.mood });
+      for (const m of d.moments) { const tx = [m.title, m.text].filter(Boolean).join(' — '); if (tx.toLocaleLowerCase().includes(q)) hits.push({ k, text: tx, mood: m.mood }); }
       if (d.review) for (const f of [...REVIEW_FIELDS, 'word']) {
         const v = d.review[f] || '';
         if (v.toLocaleLowerCase().includes(q)) hits.push({ k, text: v, mood: 0 });
@@ -776,7 +802,7 @@
       </div>`;
     if (!first) {
       clearTimeout(ui.coverTimer);
-      ui.coverTimer = setTimeout(openBook, 1600);
+      ui.coverTimer = setTimeout(openBook, 3000);
     }
   }
 
@@ -787,7 +813,7 @@
     session.set('momente.opened', '1');
     if (prefersReduced()) { el.innerHTML = ''; return; }
     el.classList.add('opening');
-    setTimeout(() => { el.innerHTML = ''; el.classList.remove('opening'); }, 1250);
+    setTimeout(() => { el.innerHTML = ''; el.classList.remove('opening'); }, 1750);
   }
 
   /* ---------- Effekte ---------- */
@@ -920,6 +946,15 @@
     },
     'goto-page': el => flip(1, () => { ui.pageIndex = Number(el.dataset.i); }),
     'page-prev': () => turnPage(-1),
+    'toggle-moment': el => {
+      const id = el.dataset.id;
+      const open = !ui.openMoments.has(id);
+      open ? ui.openMoments.add(id) : ui.openMoments.delete(id);
+      const li = el.closest('.mitem');
+      li.classList.toggle('open', open);
+      $('.details', li)?.classList.toggle('open', open);
+      el.setAttribute('aria-expanded', open);
+    },
     'pcal-prev': () => { ui.pagesMonth = new Date(ui.pagesMonth.getFullYear(), ui.pagesMonth.getMonth() - 1, 1); render({ anim: false }); },
     'pcal-next': () => { ui.pagesMonth = new Date(ui.pagesMonth.getFullYear(), ui.pagesMonth.getMonth() + 1, 1); render({ anim: false }); },
     'next-quote': el => {
@@ -962,15 +997,16 @@
     },
     'save-moment': el => {
       const text = ($('#moment-text')?.value || '').trim();
-      if (!text && !ui.draft.mood) { shake($('#composer')); toast(t('writeSomething')); $('#moment-text')?.focus(); return; }
+      const title = ($('#moment-title')?.value || '').trim();
+      if (!text && !title && !ui.draft.mood) { shake($('#composer')); toast(t('writeSomething')); $('#moment-text')?.focus(); return; }
       const now = new Date();
       let time = now.getTime();
       if (ui.date !== todayKey()) { const d = dateOf(ui.date); d.setHours(now.getHours(), now.getMinutes()); time = d.getTime(); }
-      const m = { id: uid(), time, text, mood: ui.draft.mood, tags: [...ui.draft.tags] };
+      const m = { id: uid(), time, title, text, mood: ui.draft.mood, tags: [...ui.draft.tags] };
       ensureDay(ui.date).moments.push(m);
       persist();
       burst(el);
-      ui.draft = { text: '', mood: null, tags: [] };
+      ui.draft = { title: '', text: '', mood: null, tags: [] };
       ui.detailsOpen = false;
       ui.justAdded = m.id;
       render({ anim: false });
@@ -986,30 +1022,31 @@
     },
     'edit-mood': el => {
       ui.editMood = toggleChip(el, '.mchips');
-      const dot = el.closest('.moment')?.querySelector('.m-dot');
-      if (dot) { dot.style.setProperty('--c', `var(--mood-${ui.editMood || 0})`); dot.classList.toggle('has', !!ui.editMood); }
+
     },
     'cancel-edit': () => { ui.editing = null; render({ anim: false }); },
     'save-edit': el => {
       const m = day(ui.date)?.moments.find(x => x.id === el.dataset.id);
       const text = ($('#edit-text')?.value || '').trim();
+      const title = ($('#edit-title')?.value || '').trim();
       if (!m) return;
-      if (!text && !ui.editMood) { shake(el.closest('.m-body')); toast(t('writeSomething')); return; }
-      if (text !== m.text || ui.editMood !== (m.mood || null)) {
+      if (!text && !title && !ui.editMood) { shake(el.closest('.mbody')); toast(t('writeSomething')); return; }
+      if (text !== m.text || title !== (m.title || '') || ui.editMood !== (m.mood || null)) {
         m.text = text;
+        m.title = title;
         m.mood = ui.editMood;
         m.editedAt = Date.now();
         persist();
         toast(t('edited'));
       }
       ui.editing = null;
-      ui.justAdded = m.id;
+      ui.openMoments.add(m.id);
       render({ anim: false });
     },
     'delete-moment': async el => {
       if (!(await ask(t('confirmDelete'), t('delete')))) return;
       const id = el.dataset.id;
-      const li = el.closest('.moment');
+      const li = el.closest('.mitem');
       const finish = () => {
         const d = day(ui.date);
         if (d) { d.moments = d.moments.filter(m => m.id !== id); cleanup(ui.date); persist(); }
@@ -1103,7 +1140,7 @@
           const ids = new Set(cur.moments.map(m => m.id));
           for (const m of (Array.isArray(d.moments) ? d.moments : [])) {
             if (m && m.id && !ids.has(m.id) && typeof m.time === 'number') {
-              cur.moments.push({ id: String(m.id), time: m.time, text: String(m.text || ''), mood: [1, 2, 3, 4, 5].includes(m.mood) ? m.mood : null, tags: Array.isArray(m.tags) ? m.tags.filter(x => TAGS.includes(x)) : [], ...(m.editedAt ? { editedAt: Number(m.editedAt) } : {}) });
+              cur.moments.push({ id: String(m.id), time: m.time, title: String(m.title || '').slice(0, 80), text: String(m.text || ''), mood: [1, 2, 3, 4, 5].includes(m.mood) ? m.mood : null, tags: Array.isArray(m.tags) ? m.tags.filter(x => TAGS.includes(x)) : [], ...(m.editedAt ? { editedAt: Number(m.editedAt) } : {}) });
             }
           }
           if (d.review && typeof d.review === 'object' && !reviewFilled(cur.review)) cur.review = d.review;
@@ -1130,6 +1167,7 @@
     const el = e.target;
     if (el.tagName === 'TEXTAREA') autosize(el);
     if (el.id === 'moment-text') ui.draft.text = el.value;
+    else if (el.id === 'moment-title') ui.draft.title = el.value;
     else if (el.id === 'search') runSearch(el.value);
     else if (el.id === 'day-title') { ensureDay(ui.date).title = el.value; cleanup(ui.date); persist(false); }
     else if (el.id === 'name-input') { state.settings.name = el.value.trim(); persist(false); }
@@ -1148,8 +1186,8 @@
 
   document.addEventListener('keydown', e => {
     const mod = e.key === 'Enter' && (e.metaKey || e.ctrlKey);
-    if (e.target.id === 'moment-text' && mod) { e.preventDefault(); actions['save-moment']($('[data-action="save-moment"]')); }
-    else if (e.target.id === 'edit-text' && mod) { e.preventDefault(); actions['save-edit']($('[data-action="save-edit"]')); }
+    if ((e.target.id === 'moment-text' || e.target.id === 'moment-title') && mod) { e.preventDefault(); actions['save-moment']($('[data-action="save-moment"]')); }
+    else if ((e.target.id === 'edit-text' || e.target.id === 'edit-title') && mod) { e.preventDefault(); actions['save-edit']($('[data-action="save-edit"]')); }
     else if (e.target.id === 'edit-text' && e.key === 'Escape') actions['cancel-edit']();
     else if (e.target.classList?.contains('cover') && (e.key === 'Enter' || e.key === ' ')) { e.preventDefault(); openBook(); }
     else if (ui.view === 'pages' && !/INPUT|TEXTAREA/.test(e.target.tagName) && !$('.modal') && !$('#cover .cover')) {
