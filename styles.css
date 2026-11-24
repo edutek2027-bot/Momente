@@ -1001,3 +1001,73 @@ mark { background: color-mix(in srgb, var(--gold) 35%, transparent); color: inhe
 .emoji-panel .feel-hint { margin-top: 10px; }
 .emoji-panel .feel-hint:first-child { margin-top: 0; }
 .feel .feel-note { margin-top: 10px; }
+
+/* =================== Bullet-Journal: Plan & To-do =================== */
+.subtabs { display: inline-flex; gap: 4px; padding: 4px; margin: 0 0 16px; border-radius: 999px; background: var(--field); border: 1px solid var(--border); }
+.subtabs button { border: 0; background: transparent; padding: 7px 16px; border-radius: 999px; font-size: 14px; font-weight: 600; color: var(--muted); transition: background 0.2s, color 0.2s; }
+.subtabs button.on { background: var(--accent); color: var(--on-accent); }
+.subtabs button:not(.on):hover { color: var(--text); background: var(--accent-soft); }
+.hint { margin: -6px 0 12px; font-size: 13px; color: var(--muted); }
+
+.hours { border-top: 1px solid var(--line); }
+.hrow { position: relative; display: grid; grid-template-columns: 56px minmax(0, 1fr); gap: 10px; align-items: start; min-height: 40px; border-bottom: 1px solid var(--line); }
+.htime { padding-top: 10px; font-size: 13px; font-weight: 700; color: var(--muted); font-variant-numeric: tabular-nums; display: flex; flex-direction: column; line-height: 1.1; }
+.htime small { font-size: 10px; text-transform: uppercase; letter-spacing: 0.08em; color: var(--accent-strong); margin-top: 2px; }
+.hbody { min-width: 0; }
+.hinput {
+  width: 100%; height: 39px; border: 0; background: transparent; outline: 0; padding: 0 4px;
+  font-family: var(--serif); font-size: 16px; color: var(--text);
+}
+.hinput:focus { background: var(--accent-soft); border-radius: 6px; }
+.hrow.past .htime { opacity: 0.55; }
+.hrow.now { background: color-mix(in srgb, var(--accent-soft) 70%, transparent); }
+.hrow.now .htime { color: var(--accent-strong); }
+.hrow.now::after {
+  content: ""; position: absolute; left: 50px; right: 0; top: calc(var(--f, 0) * 100%); height: 2px; background: var(--accent); pointer-events: none;
+}
+.hrow.now::before {
+  content: ""; position: absolute; left: 46px; top: calc(var(--f, 0) * 100% - 4px); width: 10px; height: 10px; border-radius: 50%; background: var(--accent); pointer-events: none;
+}
+.hmoments { display: flex; flex-wrap: wrap; gap: 4px; padding: 0 0 8px 4px; }
+.hm { border: 0; border-radius: 999px; padding: 2px 9px; background: var(--accent-soft); color: var(--accent-strong); font-size: 12px; font-weight: 600; }
+.hm:hover { background: var(--accent); color: var(--on-accent); }
+
+.carry {
+  display: block; width: 100%; margin: 0 0 12px; padding: 9px 12px; border: 1px dashed var(--accent); border-radius: 10px;
+  background: var(--accent-soft); color: var(--accent-strong); font-weight: 600; font-size: 14px; text-align: left;
+}
+.todo-add { display: flex; align-items: center; gap: 10px; padding: 6px 0 10px; border-bottom: 1px solid var(--border-strong); margin-bottom: 4px; }
+.todo-add input { flex: 1; min-width: 0; border: 0; background: transparent; outline: 0; font-family: var(--serif); font-size: 17px; color: var(--text); padding: 6px 2px; }
+.todo-add input::placeholder { color: var(--muted); font-style: italic; }
+.todos { list-style: none; margin: 0 0 12px; padding: 0; }
+.todo { display: flex; align-items: center; gap: 8px; min-height: 42px; border-bottom: 1px solid var(--line); }
+.tb {
+  flex: 0 0 auto; width: 30px; height: 30px; border: 0; border-radius: 8px; background: transparent; padding: 0;
+  font-family: var(--font); font-size: 22px; font-weight: 700; line-height: 1; color: var(--text); display: grid; place-items: center;
+  transition: background 0.2s, transform 0.25s var(--spring);
+}
+button.tb:not(:disabled):hover { background: var(--accent-soft); transform: scale(1.12); }
+.tb.static { cursor: default; color: var(--muted); }
+.todo.done .tb { color: var(--accent-strong); }
+.todo.moved .tb { color: var(--muted); font-size: 18px; }
+.tprio { color: var(--gold); font-weight: 700; }
+.tinput, .ttext { flex: 1; min-width: 0; border: 0; background: transparent; outline: 0; font-family: var(--serif); font-size: 16px; color: var(--text); padding: 6px 2px; }
+.tinput:focus { background: var(--accent-soft); border-radius: 6px; }
+.todo.done .tinput, .todo.done .ttext { text-decoration: line-through; text-decoration-color: var(--accent); color: var(--muted); }
+.todo.moved .tinput, .todo.moved .ttext { color: var(--muted); font-style: italic; }
+.todo.prio:not(.done) .tinput, .todo.prio:not(.done) .ttext { font-weight: 600; }
+.tactions { display: flex; gap: 0; opacity: 0.6; transition: opacity 0.2s; }
+.todo:hover .tactions, .tactions:focus-within { opacity: 1; }
+.tactions .icon-btn { font-size: 15px; font-weight: 700; }
+.tactions .icon-btn.on { color: var(--gold); }
+.progress { height: 6px; border-radius: 999px; background: var(--line); overflow: hidden; margin: 4px 0 6px; }
+.progress i { display: block; height: 100%; background: var(--accent); border-radius: 999px; transition: width 0.5s var(--ease); }
+.bullet-key { margin: 16px 0 0; padding: 8px 10px; border: 1px dashed var(--border-strong); border-radius: 8px; font-size: 13px; color: var(--muted); white-space: pre-wrap; text-align: center; }
+.todos.ro .todo { min-height: 34px; }
+.plan-ro { list-style: none; margin: 0 0 10px; padding: 0; }
+.plan-ro li { display: grid; grid-template-columns: 52px minmax(0, 1fr); gap: 8px; padding: 6px 0; border-bottom: 1px solid var(--line); font-family: var(--serif); }
+.plan-ro time { font-family: var(--font); font-size: 13px; font-weight: 700; color: var(--muted); font-variant-numeric: tabular-nums; }
+.plan-hours { display: flex; flex-wrap: wrap; gap: 14px; }
+.plan-hours label { display: flex; align-items: center; gap: 8px; font-size: 14px; font-weight: 600; color: var(--muted); }
+.plan-hours select { border: 1px solid var(--border); border-radius: 10px; background: var(--paper); color: var(--text); padding: 7px 10px; font: 600 15px var(--font); }
+.view-pages .page-foot { padding: 0 44px; }

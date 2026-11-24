@@ -82,7 +82,7 @@
   };
 
   /* ---------- Zustand ---------- */
-  const defaultState = () => ({ settings: { lang: null, theme: 'light', young: false, name: '', corner: 'quote', customFeels: [], palette: 'sage', paper: 'lined', font: 'serif', size: 'm' }, days: {} });
+  const defaultState = () => ({ settings: { lang: null, theme: 'light', young: false, name: '', corner: 'quote', customFeels: [], planStart: 7, planEnd: 21, palette: 'sage', paper: 'lined', font: 'serif', size: 'm' }, days: {} });
   function load() {
     try {
       const raw = localStorage.getItem(STORE_KEY);
@@ -115,6 +115,7 @@
     draftFeel: { feel: null, words: [], note: '' },
     editFeel: { feel: null, words: [], note: '' },
     emojiPanel: null,
+    todaySub: 'moments',
     openMoments: new Set(),
     detailsOpen: false,
     editing: null,
@@ -200,7 +201,7 @@
   const day = k => state.days[k];
   const ensureDay = k => (state.days[k] ||= { moments: [], review: null });
   const reviewFilled = r => !!r && !!(r.savedAt || REVIEW_FIELDS.some(f => (r[f] || '').trim()));
-  const hasContent = k => { const d = day(k); return !!d && (d.moments.length > 0 || reviewFilled(d.review)); };
+  const hasContent = k => { const d = day(k); return !!d && (d.moments.length > 0 || reviewFilled(d.review) || (d.todos || []).length > 0 || Object.values(d.plan || {}).some(v => (v || '').trim())); };
   function cleanup(k) { if (day(k) && !hasContent(k)) delete state.days[k]; }
   function dayMood(k) {
     const d = day(k); if (!d) return 0;
@@ -404,7 +405,101 @@
       </li>`;
   }
 
+  const subTabs = () => `
+    <div class="subtabs" role="tablist">
+      ${['moments', 'plan'].map(sub => `<button class="${ui.todaySub === sub ? 'on' : ''}" role="tab" aria-selected="${ui.todaySub === sub}" data-action="today-sub" data-sub="${sub}">${esc(t(sub === 'moments' ? 'subMoments' : 'subPlan'))}</button>`).join('')}
+    </div>`;
+
+  /* ---------- Plan: Stundenplan und To-do (Bullet Journal) ---------- */
+  function planHours() {
+    let a = Number(state.settings.planStart), b = Number(state.settings.planEnd);
+    if (!(a >= 0 && a <= 23)) a = 7;
+    if (!(b >= 0 && b <= 23)) b = 21;
+    if (b < a) [a, b] = [b, a];
+    return { start: a, end: b };
+  }
+
+  function scheduleBlock(k) {
+    const d = day(k);
+    const plan = d?.plan || {};
+    const { start, end } = planHours();
+    const now = new Date();
+    const isToday = k === todayKey();
+    const byHour = {};
+    (d?.moments || []).forEach(m => { const h = new Date(m.time).getHours(); (byHour[h] ||= []).push(m); });
+    let rows = '';
+    for (let h = start; h <= end; h++) {
+      const hh = pad(h);
+      const cur = isToday && now.getHours() === h;
+      const past = isToday && h < now.getHours();
+      const ms = (byHour[h] || []).sort((a, b) => a.time - b.time);
+      rows += `
+        <div class="hrow ${cur ? 'now' : ''} ${past ? 'past' : ''}" ${cur ? `style="--f:${(now.getMinutes() / 60).toFixed(3)}"` : ''}>
+          <span class="htime">${hh}:00${cur ? `<small>${esc(t('nowLabel'))}</small>` : ''}</span>
+          <div class="hbody">
+            <input class="hinput" type="text" maxlength="120" data-hour="${hh}" value="${esc(plan[hh] || '')}" aria-label="${hh}:00">
+            ${ms.length ? `<span class="hmoments">${ms.map(m => `<button class="hm" data-action="goto-moment" data-id="${m.id}">${esc(feelEmoji(m) || '•')} ${esc(trunc(momentLabel(m), 22))}</button>`).join('')}</span>` : ''}
+          </div>
+        </div>`;
+    }
+    return `
+      <section class="block schedule">
+        ${heading(t('schedule'))}
+        <p class="hint">${esc(t('planHint'))}</p>
+        <div class="hours">${rows}</div>
+      </section>`;
+  }
+
+  const todoBullet = x => x.state === 'done' ? '×' : x.state === 'moved' ? '>' : '•';
+  function todoItem(x) {
+    return `
+      <li class="todo ${x.state} ${x.prio ? 'prio' : ''}" data-id="${x.id}">
+        <button class="tb" data-action="todo-toggle" data-id="${x.id}" aria-label="${esc(x.text)}" aria-pressed="${x.state === 'done'}" ${x.state === 'moved' ? 'disabled' : ''}>${todoBullet(x)}</button>
+        ${x.prio ? '<span class="tprio" aria-hidden="true">✱</span>' : ''}
+        <input class="tinput" type="text" maxlength="160" data-id="${x.id}" value="${esc(x.text)}" ${x.state === 'moved' ? 'readonly' : ''} aria-label="${esc(t('todos'))}">
+        <span class="tactions">
+          <button class="icon-btn small ghost ${x.prio ? 'on' : ''}" data-action="todo-prio" data-id="${x.id}" aria-label="${esc(t('priority'))}" title="${esc(t('priority'))}">✱</button>
+          ${x.state === 'open' ? `<button class="icon-btn small ghost" data-action="todo-move" data-id="${x.id}" aria-label="${esc(t('moveTomorrow'))}" title="${esc(t('moveTomorrow'))}">&gt;</button>` : ''}
+          <button class="icon-btn small ghost" data-action="todo-delete" data-id="${x.id}" aria-label="${esc(t('delete'))}" title="${esc(t('delete'))}">${ICONS.trash}</button>
+        </span>
+      </li>`;
+  }
+
+  function todoBlock(k) {
+    const todos = day(k)?.todos || [];
+    const active = todos.filter(x => x.state !== 'moved');
+    const done = active.filter(x => x.state === 'done').length;
+    const yOpen = k === todayKey() ? (day(addDays(k, -1))?.todos || []).filter(x => x.state === 'open') : [];
+    return `
+      <section class="block todos-block">
+        <h2 class="h2"><span>${esc(t('todos'))}</span>${active.length ? `<em class="h2-count">${done}/${active.length}</em>` : ''}</h2>
+        ${yOpen.length ? `<button class="carry" data-action="carry-over">↪ ${esc(t('carryOver', yOpen.length))}</button>` : ''}
+        <div class="todo-add">
+          <span class="tb static" aria-hidden="true">•</span>
+          <input id="todo-input" type="text" maxlength="160" placeholder="${esc(t('todoPh'))}" aria-label="${esc(t('todoPh'))}">
+          <button class="btn primary sm" data-action="add-todo">${esc(t('addTask'))}</button>
+        </div>
+        ${todos.length ? `<ul class="todos">${todos.map(todoItem).join('')}</ul>` : `<p class="hint">${esc(t('todoEmpty'))}</p>`}
+        ${active.length ? `<div class="progress" aria-label="${esc(t('todoDone', done, active.length))}"><i style="width:${Math.round(done / active.length * 100)}%"></i></div><p class="hint">${esc(t('todoDone', done, active.length))}</p>` : ''}
+        <p class="bullet-key">${esc(t('bulletKey'))}</p>
+      </section>`;
+  }
+
+  function renderPlan() {
+    const k = ui.date;
+    const l = `
+      <header class="hero">
+        <p class="eyebrow">${esc(fmt(dateOf(k), { weekday: 'long', day: 'numeric', month: 'long' }))}</p>
+        <h1 class="title">${esc(t('subPlan'))}</h1>
+      </header>
+      ${subTabs()}
+      ${dayNav(k)}
+      ${scheduleBlock(k)}`;
+    return { l, r: todoBlock(k) };
+  }
+
   function renderToday() {
+    if (ui.todaySub === 'plan') return renderPlan();
     const k = ui.date, isToday = k === todayKey();
     const d = day(k);
     const moments = d ? [...d.moments].sort((a, b) => a.time - b.time) : [];
@@ -419,6 +514,7 @@
         <h1 class="title">${title}</h1>
         ${isToday ? dailyCorner() : ''}
       </header>
+      ${subTabs()}
       ${dayNav(k)}
       <section class="composer" id="composer">
         <div class="mt-row">
@@ -563,6 +659,12 @@
           ${moods.length ? `<div class="fact"><span class="fact-label">&nbsp;</span><span class="mood-strip" aria-hidden="true">${moods.map(m => `<i style="--c:var(--mood-${m.mood})"></i>`).join('')}</span></div>` : ''}
         </div>
         ${ms.length ? momentList(ms, true) : ''}
+        ${(d.todos || []).length ? `
+          <h3 class="page-sub">${esc(t('todos'))}</h3>
+          <ul class="todos ro">${d.todos.map(x => `<li class="todo ${x.state} ${x.prio ? 'prio' : ''}"><span class="tb static">${todoBullet(x)}</span>${x.prio ? '<span class="tprio">✱</span>' : ''}<span class="ttext">${esc(x.text)}</span></li>`).join('')}</ul>` : ''}
+        ${Object.keys(d.plan || {}).filter(h => (d.plan[h] || '').trim()).length ? `
+          <h3 class="page-sub">${esc(t('schedule'))}</h3>
+          <ul class="plan-ro">${Object.keys(d.plan).sort().filter(h => (d.plan[h] || '').trim()).map(h => `<li><time>${h}:00</time><span>${esc(d.plan[h])}</span></li>`).join('')}</ul>` : ''}
         ${notes.length ? `
           <div class="page-review">
             <h3>${esc(t('review'))}</h3>
@@ -658,6 +760,8 @@
       const d = state.days[k];
       if ((d.title || '').toLocaleLowerCase().includes(q)) hits.push({ k, text: d.title, mood: dayMood(k) });
       for (const m of d.moments) { const tx = [m.title, m.text, m.feelNote, ...(m.feelWords || [])].filter(Boolean).join(' — '); if (tx.toLocaleLowerCase().includes(q)) hits.push({ k, text: tx, mood: m.mood }); }
+      for (const x of d.todos || []) if ((x.text || '').toLocaleLowerCase().includes(q)) hits.push({ k, text: todoBullet(x) + ' ' + x.text, mood: 0 });
+      for (const [h, v] of Object.entries(d.plan || {})) if ((v || '').toLocaleLowerCase().includes(q)) hits.push({ k, text: `${h}:00 ${v}`, mood: 0 });
       if (d.review) for (const f of REVIEW_FIELDS) {
         const v = d.review[f] || '';
         if (v.toLocaleLowerCase().includes(q)) hits.push({ k, text: v, mood: 0 });
@@ -744,6 +848,13 @@
         </div>
       </section>
       <section class="block">
+        ${heading(t('planHours'))}
+        <div class="plan-hours">
+          <label>${esc(t('planFrom'))} <select id="plan-start">${Array.from({ length: 13 }, (_, i) => i + 4).map(h => `<option value="${h}" ${planHours().start === h ? 'selected' : ''}>${pad(h)}:00</option>`).join('')}</select></label>
+          <label>${esc(t('planTo'))} <select id="plan-end">${Array.from({ length: 12 }, (_, i) => i + 12).map(h => `<option value="${h}" ${planHours().end === h ? 'selected' : ''}>${pad(h)}:00</option>`).join('')}</select></label>
+        </div>
+      </section>
+      <section class="block">
         ${heading(t('profile'))}
         <label class="field">
           <span class="field-label">${esc(t('nameLabel'))}</span>
@@ -793,6 +904,7 @@
     const pages = ui.view === 'pages';
     const pb = pages ? pageBounds() : null;
     const wide = isWide();
+    const keepScroll = !anim ? $$('#app .page-body').map(e => e.scrollTop) : [];
     $('#app').innerHTML = `
       <div class="spread view-${ui.view} ${anim ? 'enter' : ''} ${!wide && !r ? 'single' : ''}">
         <section class="page page-l">
@@ -807,6 +919,7 @@
           ${pages && wide ? corner('next', pb.canNext) : ''}
         </section>
       </div>`;
+    keepScroll.forEach((top, i) => { const pb = $$('#app .page-body')[i]; if (pb) pb.scrollTop = top; });
     postRender(anim);
   }
 
@@ -1170,6 +1283,64 @@
       persist();
       refreshPicker(el.dataset.scope);
     },
+    'today-sub': el => {
+      const sub = el.dataset.sub;
+      if (sub === ui.todaySub) return;
+      flip(sub === 'plan' ? 1 : -1, () => { ui.todaySub = sub; ui.editing = null; });
+    },
+    'goto-moment': el => {
+      ui.openMoments.add(el.dataset.id);
+      flip(-1, () => { ui.todaySub = 'moments'; });
+    },
+    'add-todo': () => {
+      const inp = $('#todo-input');
+      const text = (inp?.value || '').trim();
+      if (!text) { inp?.focus(); return; }
+      (ensureDay(ui.date).todos ||= []).push({ id: uid(), text, state: 'open', prio: false });
+      persist();
+      render({ anim: false });
+      $('#todo-input')?.focus();
+    },
+    'todo-toggle': el => {
+      const x = (day(ui.date)?.todos || []).find(y => y.id === el.dataset.id);
+      if (!x || x.state === 'moved') return;
+      x.state = x.state === 'done' ? 'open' : 'done';
+      persist();
+      if (x.state === 'done') burst(el);
+      render({ anim: false });
+    },
+    'todo-prio': el => {
+      const x = (day(ui.date)?.todos || []).find(y => y.id === el.dataset.id);
+      if (!x) return;
+      x.prio = !x.prio;
+      persist();
+      render({ anim: false });
+    },
+    'todo-move': el => {
+      const x = (day(ui.date)?.todos || []).find(y => y.id === el.dataset.id);
+      if (!x || x.state !== 'open') return;
+      x.state = 'moved';
+      (ensureDay(addDays(ui.date, 1)).todos ||= []).push({ id: uid(), text: x.text, state: 'open', prio: !!x.prio, from: ui.date });
+      persist();
+      toast(t('movedToast'));
+      render({ anim: false });
+    },
+    'todo-delete': el => {
+      const d = day(ui.date);
+      if (!d) return;
+      d.todos = (d.todos || []).filter(y => y.id !== el.dataset.id);
+      cleanup(ui.date);
+      persist();
+      render({ anim: false });
+    },
+    'carry-over': () => {
+      const y = day(addDays(ui.date, -1));
+      const open = (y?.todos || []).filter(x => x.state === 'open');
+      const list = (ensureDay(ui.date).todos ||= []);
+      open.forEach(x => { x.state = 'moved'; list.push({ id: uid(), text: x.text, state: 'open', prio: !!x.prio, from: addDays(ui.date, -1) }); });
+      persist();
+      render({ anim: false });
+    },
     'toggle-word': el => {
       const sel = el.dataset.scope === 'edit' ? ui.editFeel : ui.draftFeel;
       const w = el.dataset.word;
@@ -1348,6 +1519,8 @@
             }
           }
           if (d.review && typeof d.review === 'object' && !reviewFilled(cur.review)) cur.review = d.review;
+          if (Array.isArray(d.todos)) { const ids = new Set((cur.todos || []).map(x => x.id)); cur.todos = [...(cur.todos || []), ...d.todos.filter(x => x && x.id && !ids.has(x.id)).map(x => ({ id: String(x.id), text: String(x.text || ''), state: ['open', 'done', 'moved'].includes(x.state) ? x.state : 'open', prio: !!x.prio }))]; }
+          if (d.plan && typeof d.plan === 'object') { cur.plan = { ...(cur.plan || {}) }; for (const [h, v] of Object.entries(d.plan)) if (/^\d\d$/.test(h) && !cur.plan[h]) cur.plan[h] = String(v); }
           if (typeof d.title === 'string' && !(cur.title || '').trim()) cur.title = d.title.slice(0, 80);
           cleanup(k);
         }
@@ -1374,6 +1547,17 @@
     else if (el.id === 'moment-title') ui.draft.title = el.value;
     else if (el.id === 'moment-time') ui.draft.time = el.value;
     else if (el.id === 'draft-feelnote') ui.draftFeel.note = el.value;
+    else if (el.classList.contains('hinput')) {
+      const d = ensureDay(ui.date);
+      d.plan ||= {};
+      if (el.value.trim()) d.plan[el.dataset.hour] = el.value; else delete d.plan[el.dataset.hour];
+      cleanup(ui.date);
+      persist(false);
+    }
+    else if (el.classList.contains('tinput')) {
+      const x = (day(ui.date)?.todos || []).find(y => y.id === el.dataset.id);
+      if (x) { x.text = el.value; persist(false); }
+    }
     else if (el.id === 'edit-feelnote') ui.editFeel.note = el.value;
     else if (el.id === 'search') runSearch(el.value);
     else if (el.id === 'day-title') { ensureDay(ui.date).title = el.value; cleanup(ui.date); persist(false); }
@@ -1388,11 +1572,15 @@
 
   document.addEventListener('change', e => {
     if (e.target.id === 'young-toggle') { state.settings.young = e.target.checked; persist(); }
+    if (e.target.id === 'plan-start') { state.settings.planStart = Number(e.target.value); persist(); }
+    if (e.target.id === 'plan-end') { state.settings.planEnd = Number(e.target.value); persist(); }
     if (e.target.id === 'import-file' && e.target.files[0]) { importFile(e.target.files[0]); e.target.value = ''; }
   });
 
   document.addEventListener('keydown', e => {
     const mod = e.key === 'Enter' && (e.metaKey || e.ctrlKey);
+    if (e.target.id === 'todo-input' && e.key === 'Enter') { e.preventDefault(); actions['add-todo'](); return; }
+    if (e.target.classList?.contains('hinput') && e.key === 'Enter') { e.preventDefault(); const all = $$('.hinput'); const i = all.indexOf(e.target); all[i + 1]?.focus(); return; }
     if (/-emoji-(type|name)$/.test(e.target.id || '') && e.key === 'Enter') { e.preventDefault(); const sc = e.target.id.split('-')[0]; addCustomFeel(sc, $(`#${sc}-emoji-type`)?.value, ($(`#${sc}-emoji-name`)?.value || '').trim()); }
     else if ((e.target.id === 'moment-text' || e.target.id === 'moment-title') && mod) { e.preventDefault(); actions['save-moment']($('[data-action="save-moment"]')); }
     else if ((e.target.id === 'edit-text' || e.target.id === 'edit-title') && mod) { e.preventDefault(); actions['save-edit']($('[data-action="save-edit"]')); }
