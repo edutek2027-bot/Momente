@@ -511,6 +511,37 @@
     toastTimer = setTimeout(() => el.classList.remove('show'), 2200);
   }
 
+  // Eigener Bestätigungsdialog (statt confirm(), das in eingebetteten Seiten blockiert ist)
+  function ask(msg, okLabel) {
+    return new Promise(resolve => {
+      const prev = document.activeElement;
+      const el = document.createElement('div');
+      el.className = 'modal';
+      el.innerHTML = `
+        <div class="modal-card" role="alertdialog" aria-modal="true" aria-label="${esc(msg)}">
+          <p>${esc(msg)}</p>
+          <div class="btn-row">
+            <button class="btn soft" data-r="0">${esc(t('cancel'))}</button>
+            <button class="btn danger-solid" data-r="1">${esc(okLabel)}</button>
+          </div>
+        </div>`;
+      document.body.appendChild(el);
+      const done = v => {
+        el.classList.add('out');
+        setTimeout(() => el.remove(), 260);
+        prev?.focus?.();
+        resolve(v);
+      };
+      el.addEventListener('click', e => {
+        const b = e.target.closest('[data-r]');
+        if (b) done(b.dataset.r === '1');
+        else if (e.target === el) done(false);
+      });
+      el.addEventListener('keydown', e => { if (e.key === 'Escape') done(false); });
+      $('[data-r="0"]', el).focus();
+    });
+  }
+
   function shake(el) { if (!el) return; el.classList.remove('shake'); void el.offsetWidth; el.classList.add('shake'); }
 
   /* ---------- Theme ---------- */
@@ -561,8 +592,8 @@
       render({ anim: false });
       toast(t('saved'));
     },
-    'delete-moment': el => {
-      if (!confirm(t('confirmDelete'))) return;
+    'delete-moment': async el => {
+      if (!(await ask(t('confirmDelete'), t('delete')))) return;
       const id = el.dataset.id;
       const li = el.closest('.moment');
       const finish = () => {
@@ -611,7 +642,13 @@
       $$('.seg button').forEach(b => { const on = b.dataset.theme === state.settings.theme; b.classList.toggle('on', on); b.setAttribute('aria-checked', on); });
     },
     export: () => {
-      const blob = new Blob([JSON.stringify({ app: 'momente', version: 1, exportedAt: new Date().toISOString(), ...state }, null, 2)], { type: 'application/json' });
+      const json = JSON.stringify({ app: 'momente', version: 1, exportedAt: new Date().toISOString(), ...state }, null, 2);
+      // In eingebetteten Seiten sind Downloads gesperrt → Sicherung in die Zwischenablage
+      if (window.self !== window.top && navigator.clipboard) {
+        navigator.clipboard.writeText(json).then(() => toast(t('copied')), () => toast(t('storageError')));
+        return;
+      }
+      const blob = new Blob([json], { type: 'application/json' });
       const a = document.createElement('a');
       a.href = URL.createObjectURL(blob);
       a.download = `momente-${todayKey()}.json`;
@@ -620,8 +657,8 @@
       setTimeout(() => { URL.revokeObjectURL(a.href); a.remove(); }, 500);
     },
     import: () => $('#import-file')?.click(),
-    wipe: () => {
-      if (!confirm(t('wipeConfirm'))) return;
+    wipe: async () => {
+      if (!(await ask(t('wipeConfirm'), t('wipe')))) return;
       state.days = {};
       persist();
       toast(t('wiped'));
