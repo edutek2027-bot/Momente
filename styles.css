@@ -1071,3 +1071,52 @@ button.tb:not(:disabled):hover { background: var(--accent-soft); transform: scal
 .plan-hours label { display: flex; align-items: center; gap: 8px; font-size: 14px; font-weight: 600; color: var(--muted); }
 .plan-hours select { border: 1px solid var(--border); border-radius: 10px; background: var(--paper); color: var(--text); padding: 7px 10px; font: 600 15px var(--font); }
 .view-pages .page-foot { padding: 0 44px; }
+
+/* =================== To-do in drei farbigen Prioritäts-Boxen =================== */
+:root {
+  --p1: #e07a6f; --p1-bg: #fbe6e3;
+  --p2: #d9a43a; --p2-bg: #fbf0d6;
+  --p3: #5fae7f; --p3-bg: #e1f2e6;
+}
+:root[data-theme="dark"] {
+  --p1: #e6928a; --p1-bg: #3a2624;
+  --p2: #e0b85f; --p2-bg: #3a3222;
+  --p3: #79c495; --p3-bg: #20362a;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --p1: #e6928a; --p1-bg: #3a2624;
+    --p2: #e0b85f; --p2-bg: #3a3222;
+    --p3: #79c495; --p3-bg: #20362a;
+  }
+}
+.tboxes { display: flex; flex-direction: column; gap: 12px; margin-bottom: 14px; }
+.tbox { --pc: var(--p2); --pb: var(--p2-bg); border: 1.5px solid color-mix(in srgb, var(--pc) 55%, transparent); border-left-width: 6px; border-radius: 12px; background: var(--pb); padding: 8px 12px 6px; }
+.tbox.p1 { --pc: var(--p1); --pb: var(--p1-bg); }
+.tbox.p3 { --pc: var(--p3); --pb: var(--p3-bg); }
+.tbox-head { display: flex; align-items: center; gap: 10px; padding: 2px 0 6px; }
+.tbox-num { flex: 0 0 auto; width: 26px; height: 26px; border-radius: 50%; display: grid; place-items: center; background: var(--pc); color: #fff; font-weight: 800; font-size: 14px; }
+.tbox-title { flex: 1; min-width: 0; display: flex; flex-direction: column; line-height: 1.2; }
+.tbox-title b { font-family: var(--serif); font-size: 17px; }
+.tbox-title small { font-size: 12px; color: var(--muted); }
+.tbox-count { font-style: normal; font-size: 12px; font-weight: 700; padding: 2px 8px; border-radius: 999px; background: color-mix(in srgb, var(--pc) 25%, transparent); color: var(--text); }
+.tbox .todos { margin: 0; }
+.tbox .todo { border-bottom-color: color-mix(in srgb, var(--pc) 25%, transparent); min-height: 40px; }
+.tbox .todo-add { border-bottom: 0; padding: 2px 0 4px; margin: 0; }
+.tbox .todo-add input { font-size: 16px; }
+.tbox .tadd { background: var(--pc); color: #fff; border-color: transparent; font-size: 20px; font-weight: 700; }
+.tbox .tb { color: color-mix(in srgb, var(--pc) 70%, var(--text)); }
+.tbox .todo.done .tb { color: var(--pc); }
+.tbox .tinput:focus { background: color-mix(in srgb, var(--pc) 18%, transparent); }
+.tbox .tactions .icon-btn:hover { background: color-mix(in srgb, var(--pc) 20%, transparent); color: var(--text); }
+.todos.ro .todo { border-left: 4px solid var(--p2); padding-left: 6px; }
+.todos.ro .todo.pm1 { border-left-color: var(--p1); }
+.todos.ro .todo.pm3 { border-left-color: var(--p3); }
+
+/* Aufgabe auf einen anderen Tag verschieben */
+.todo { flex-wrap: wrap; }
+.move-menu { flex: 1 0 100%; display: flex; flex-wrap: wrap; align-items: center; gap: 8px; padding: 4px 0 10px 38px; animation: rise 0.25s var(--ease) both; }
+.move-date { display: inline-flex; align-items: center; gap: 6px; font-size: 13px; font-weight: 600; color: var(--muted); }
+.move-date input { border: 1px solid var(--border); border-radius: 999px; background: var(--paper); color: var(--text); padding: 6px 10px; font: 600 14px var(--font); }
+.moved-to, .from-tag { flex: 0 0 auto; font-size: 12px; font-weight: 700; color: var(--muted); padding: 1px 8px; border-radius: 999px; background: color-mix(in srgb, var(--muted) 14%, transparent); }
+.from-tag { color: var(--accent-strong); background: var(--accent-soft); }
