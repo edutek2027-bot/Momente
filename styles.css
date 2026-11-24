@@ -564,7 +564,7 @@ button.mday:hover { transform: scale(1.12); }
 .view-pages .page-body { padding-bottom: 70px; }
 @media (min-width: 900px) {
   .cal-grid { gap: 4px; }
-  .cal-grid .cday { aspect-ratio: 1.5; }
+  .cal-grid .cday { aspect-ratio: 1.15; }
 }
 .page-end { flex: 0 0 auto; min-height: 220px; display: grid; place-content: center; text-align: center; color: var(--muted); font-family: var(--serif); font-style: italic; }
 .fleuron { font-size: 32px; color: var(--accent); font-style: normal; }
@@ -977,3 +977,27 @@ mark { background: color-mix(in srgb, var(--gold) 35%, transparent); color: inhe
 .cday.dim { opacity: 0.28; }
 .cday.match { box-shadow: 0 0 0 2px var(--accent); transform: scale(1.04); }
 @media (max-width: 380px) { .femoji { min-width: 48px; } .femoji .fe { font-size: 23px; } }
+
+/* Eigene Smileys */
+.femoji.add .fe { font-size: 22px; height: 26px; display: grid; place-items: center; color: var(--accent-strong); }
+.femoji.add { border: 1.5px dashed var(--border-strong); }
+.femoji.add.on { background: var(--accent-soft); border-color: var(--accent); }
+.emoji-panel { margin-top: 10px; padding: 12px; border: 1px solid var(--border); border-radius: 12px; background: var(--paper); animation: rise 0.3s var(--ease) both; }
+.ep-row { display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 10px; }
+.ep-type, .ep-name {
+  border: 1px solid var(--border); border-radius: 10px; background: var(--field); color: var(--text); outline: 0;
+  padding: 8px 10px; font: 16px var(--font);
+}
+.ep-type { width: 74px; text-align: center; font-size: 20px; }
+.ep-name { flex: 1 1 160px; min-width: 0; }
+.ep-type:focus, .ep-name:focus { border-color: var(--accent); box-shadow: 0 0 0 3px var(--accent-soft); }
+.ep-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(40px, 1fr)); gap: 4px; }
+.ep { height: 40px; border: 0; border-radius: 10px; background: transparent; font-size: 22px; transition: transform 0.2s var(--spring), background 0.2s; }
+.ep:hover { background: var(--accent-soft); transform: scale(1.15); }
+.ep-mine { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 4px; }
+.ep-chip { display: inline-flex; align-items: center; gap: 4px; padding: 3px 4px 3px 10px; border-radius: 999px; background: var(--accent-soft); font-size: 14px; }
+.ep-chip button { width: 22px; height: 22px; border: 0; border-radius: 50%; background: transparent; color: var(--muted); font-size: 16px; line-height: 1; }
+.ep-chip button:hover { background: var(--paper); color: var(--danger); }
+.emoji-panel .feel-hint { margin-top: 10px; }
+.emoji-panel .feel-hint:first-child { margin-top: 0; }
+.feel .feel-note { margin-top: 10px; }

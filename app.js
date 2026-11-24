@@ -22,6 +22,8 @@
     { key: 'angry', emoji: '😠', mood: 1 }
   ];
   const FEEL = Object.fromEntries(FEELS.map(f => [f.key, f]));
+  const EMOJI_PALETTE = ['🥰', '🤩', '😍', '🥳', '😂', '😊', '🤗', '😇', '😎', '🤔', '😶', '🙄', '😬', '😳', '🥺', '😢',
+    '😭', '😤', '😩', '🤒', '🤯', '😱', '🙏', '💪', '✨', '🌿', '☀️', '🌧️', '❤️', '💔', '🎉', '☕'];
   const TAGS = ['family', 'friends', 'work', 'school', 'idea', 'health', 'nature', 'gratitude'];
   const TAG_EMOJI = { family: '🏡', friends: '🤝', work: '💼', school: '📚', idea: '💡', health: '💪', nature: '🌳', gratitude: '🙏' };
   const VIEWS = ['pages', 'calendar', 'today', 'settings'];
@@ -80,7 +82,7 @@
   };
 
   /* ---------- Zustand ---------- */
-  const defaultState = () => ({ settings: { lang: null, theme: 'light', young: false, name: '', corner: 'quote', palette: 'sage', paper: 'lined', font: 'serif', size: 'm' }, days: {} });
+  const defaultState = () => ({ settings: { lang: null, theme: 'light', young: false, name: '', corner: 'quote', customFeels: [], palette: 'sage', paper: 'lined', font: 'serif', size: 'm' }, days: {} });
   function load() {
     try {
       const raw = localStorage.getItem(STORE_KEY);
@@ -112,7 +114,7 @@
     draft: { title: '', time: '', text: '', mood: null, tags: [] },
     draftFeel: { feel: null, words: [], note: '' },
     editFeel: { feel: null, words: [], note: '' },
-    calFeel: null,
+    emojiPanel: null,
     openMoments: new Set(),
     detailsOpen: false,
     editing: null,
@@ -248,42 +250,100 @@
     return '';
   }
 
+  const customFeels = () => Array.isArray(state.settings.customFeels) ? state.settings.customFeels : [];
+  // Gefühl auflösen: eines der 7 festen oder ein eigenes Emoji („c:🥳“)
+  function feelInfo(key, name) {
+    if (!key) return null;
+    if (key.startsWith('c:')) {
+      const emoji = key.slice(2);
+      const c = customFeels().find(x => x.emoji === emoji);
+      return { key, emoji, name: name || c?.name || '', mood: 0, custom: true };
+    }
+    const f = FEEL[key];
+    return f ? { ...f, name: t('feel_' + key) } : null;
+  }
+
   function feelPicker(scope, sel) {
-    const f = sel.feel ? FEEL[sel.feel] : null;
-    const words = f ? t('feelWords_' + f.key) : [];
+    const f = feelInfo(sel.feel);
+    const words = f && !f.custom ? t('feelWords_' + f.key) : [];
+    const btn = (key, emoji, label, mood) => `
+      <button class="femoji ${sel.feel === key ? 'on' : ''}" data-action="pick-feel" data-scope="${scope}" data-feel="${esc(key)}" role="radio" aria-checked="${sel.feel === key}" style="--c:var(--mood-${mood})" title="${esc(label)}">
+        <span class="fe" aria-hidden="true">${emoji}</span><span class="fl">${esc(label)}</span>
+      </button>`;
+    const mine = customFeels();
     return `
       <div class="feel" data-scope="${scope}">
         <span class="feel-q">${esc(t('feelQ'))}</span>
         <div class="feel-emojis" role="radiogroup" aria-label="${esc(t('feelQ'))}">
-          ${FEELS.map(x => `
-            <button class="femoji ${sel.feel === x.key ? 'on' : ''}" data-action="pick-feel" data-scope="${scope}" data-feel="${x.key}" role="radio" aria-checked="${sel.feel === x.key}" style="--c:var(--mood-${x.mood})">
-              <span class="fe" aria-hidden="true">${x.emoji}</span><span class="fl">${esc(t('feel_' + x.key))}</span>
-            </button>`).join('')}
+          ${FEELS.map(x => btn(x.key, x.emoji, t('feel_' + x.key), x.mood)).join('')}
+          ${mine.map(c => btn('c:' + c.emoji, esc(c.emoji), c.name || '', 0)).join('')}
+          ${sel.feel && sel.feel.startsWith('c:') && !mine.some(c => 'c:' + c.emoji === sel.feel) ? btn(sel.feel, esc(sel.feel.slice(2)), sel.name || '', 0) : ''}
+          <button class="femoji add ${ui.emojiPanel === scope ? 'on' : ''}" data-action="emoji-panel" data-scope="${scope}" aria-expanded="${ui.emojiPanel === scope}">
+            <span class="fe" aria-hidden="true">＋</span><span class="fl">${esc(t('addOwnEmoji'))}</span>
+          </button>
         </div>
-        ${f ? `
+        ${ui.emojiPanel === scope ? `
+          <div class="emoji-panel">
+            <span class="feel-hint">${esc(t('emojiPanelTitle'))}</span>
+            <div class="ep-row">
+              <input id="${scope}-emoji-type" class="ep-type" type="text" maxlength="8" placeholder="${esc(t('emojiTypePh'))}" aria-label="${esc(t('emojiTypePh'))}">
+              <input id="${scope}-emoji-name" class="ep-name" type="text" maxlength="24" placeholder="${esc(t('emojiNamePh'))}" aria-label="${esc(t('emojiNamePh'))}">
+              <button class="btn primary sm" data-action="emoji-add" data-scope="${scope}">${esc(t('addBtn'))}</button>
+            </div>
+            <div class="ep-grid">
+              ${EMOJI_PALETTE.map(e => `<button class="ep" data-action="emoji-pick" data-scope="${scope}" data-emoji="${e}" aria-label="${e}">${e}</button>`).join('')}
+            </div>
+            ${mine.length ? `
+              <span class="feel-hint">${esc(t('myEmojis'))}</span>
+              <div class="ep-mine">
+                ${mine.map(c => `<span class="ep-chip">${esc(c.emoji)} ${esc(c.name)}<button data-action="emoji-remove" data-scope="${scope}" data-emoji="${esc(c.emoji)}" aria-label="${esc(t('removeLabel'))}" title="${esc(t('removeLabel'))}">×</button></span>`).join('')}
+              </div>` : ''}
+          </div>` : ''}
+        ${words.length ? `
           <div class="feel-more">
             <span class="feel-hint">${esc(t('feelWordsHint'))}</span>
             <div class="feel-words">
               ${words.map(w => `<button class="fword ${sel.words.includes(w) ? 'on' : ''}" data-action="toggle-word" data-scope="${scope}" data-word="${esc(w)}" aria-pressed="${sel.words.includes(w)}">${esc(w)}</button>`).join('')}
             </div>
-            <textarea id="${scope}-feelnote" class="feel-note" rows="1" placeholder="${esc(t('feelNotePh'))}">${esc(sel.note)}</textarea>
           </div>` : ''}
+        <textarea id="${scope}-feelnote" class="feel-note" rows="1" placeholder="${esc(t('feelNotePh'))}" aria-label="${esc(t('feelNotePh'))}">${esc(sel.note)}</textarea>
       </div>`;
   }
 
   // Gefühl eines Moments als Anzeige
   function feelView(m) {
-    const f = m.feel && FEEL[m.feel];
-    if (!f && !m.mood) return '';
-    const name = f ? t('feel_' + f.key) : t('mood' + m.mood);
-    const emoji = f ? f.emoji : MOOD_EMOJI[m.mood];
+    const f = feelInfo(m.feel, m.feelName);
+    const note = (m.feelNote || '').trim();
+    if (!f && !m.mood && !note) return '';
+    const name = f ? f.name : (m.mood ? t('mood' + m.mood) : '');
+    const emoji = f ? f.emoji : (m.mood ? MOOD_EMOJI[m.mood] : '');
     return `
-      <div class="m-feel" style="--c:var(--mood-${f ? f.mood : m.mood})">
-        <span class="m-feel-head"><span class="fe" aria-hidden="true">${emoji}</span><b>${esc(name)}</b>${(m.feelWords || []).map(w => `<span class="fword sm">${esc(w)}</span>`).join('')}</span>
-        ${(m.feelNote || '').trim() ? `<p class="m-feel-note">${esc(m.feelNote)}</p>` : ''}
+      <div class="m-feel" style="--c:var(--mood-${f ? f.mood : (m.mood || 0)})">
+        ${emoji ? `<span class="m-feel-head"><span class="fe" aria-hidden="true">${esc(emoji)}</span>${name ? `<b>${esc(name)}</b>` : ''}${(m.feelWords || []).map(w => `<span class="fword sm">${esc(w)}</span>`).join('')}</span>` : ''}
+        ${note ? `<p class="m-feel-note">${esc(note)}</p>` : ''}
       </div>`;
   }
-  const feelEmoji = m => (m.feel && FEEL[m.feel]) ? FEEL[m.feel].emoji : (m.mood ? MOOD_EMOJI[m.mood] : '');
+  const feelEmoji = m => feelInfo(m.feel, m.feelName)?.emoji || (m.mood ? MOOD_EMOJI[m.mood] : '');
+
+  function refreshPicker(scope) {
+    const sel = scope === 'edit' ? ui.editFeel : ui.draftFeel;
+    const box = $(`.feel[data-scope="${scope}"]`);
+    if (box) box.outerHTML = feelPicker(scope, sel);
+    autosize($(`#${scope}-feelnote`) || document.createElement('textarea'));
+  }
+  function addCustomFeel(scope, emoji, name) {
+    emoji = (emoji || '').trim();
+    if (!emoji) { toast(t('emojiMissing')); return; }
+    const list = customFeels().slice();
+    const ex = list.find(c => c.emoji === emoji);
+    if (ex) { if (name) ex.name = name; } else list.push({ emoji, name: name || '' });
+    state.settings.customFeels = list.slice(-12);
+    persist();
+    const sel = scope === 'edit' ? ui.editFeel : ui.draftFeel;
+    sel.feel = 'c:' + emoji; sel.words = []; sel.name = name || ex?.name || '';
+    ui.emojiPanel = null;
+    refreshPicker(scope);
+  }
 
   const momentLabel = m => (m.title || '').trim() || trunc((m.text || '').split('\n')[0], 60) || (m.mood ? t('mood' + m.mood) : '');
 
@@ -560,25 +620,18 @@
       const k = keyOf(new Date(m.getFullYear(), m.getMonth(), dnum));
       const has = hasContent(k);
       const future = k > tk;
-      const fm = ui.calFeel ? (day(k)?.moments || []).some(x => x.feel === ui.calFeel) : false;
-      const cls = ui.calFeel ? (fm ? 'match' : 'dim') : '';
       cells += `
-        <button class="cday ${has ? 'has' : ''} ${cls} ${k === tk ? 'today' : ''}" data-action="open-day" data-k="${k}" ${future ? 'disabled' : ''}
-          style="--c:var(--mood-${dayMood(k)}); --i:${dnum}" aria-label="${esc(fmt(dateOf(k), { day: 'numeric', month: 'long' }))}">
+        <button class="cday ${has ? 'has' : ''} ${k === tk ? 'today' : ''}" data-action="open-day" data-k="${k}" ${future ? 'disabled' : ''}
+          style="--c:${dayMood(k) ? `var(--mood-${dayMood(k)})` : 'color-mix(in srgb, var(--accent) 28%, var(--paper))'}; --i:${dnum}" aria-label="${esc(fmt(dateOf(k), { day: 'numeric', month: 'long' }))}">
           <span>${dnum}</span>${day(k)?.review?.savedAt ? '<i class="rdot" aria-hidden="true"></i>' : ''}
         </button>`;
     }
     const now = new Date(); const atCurrent = m.getFullYear() === now.getFullYear() && m.getMonth() === now.getMonth();
     const l = `
       <header class="hero">
-        <p class="eyebrow">${esc(t('calendar'))}</p>
-        <h1 class="title">${esc(fmt(m, { month: 'long', year: 'numeric' }))}</h1>
+        <p class="eyebrow">Momente</p>
+        <h1 class="title">${esc(t('calendar'))}</h1>
       </header>
-      <section class="stats">
-        <div class="stat"><span class="stat-num" data-count="${streak()}">0</span><span class="stat-label">${esc(t('streak'))}</span></div>
-        <div class="stat"><span class="stat-num" data-count="${total}">0</span><span class="stat-label">${esc(t('totalMoments'))}</span></div>
-        <div class="stat"><span class="stat-num" data-count="${written}">0</span><span class="stat-label">${esc(t('daysWritten'))}</span></div>
-      </section>
       <section class="block cal">
         <div class="cal-head">
           <button class="icon-btn" data-action="prev-month" aria-label="${esc(t('prevMonth'))}">‹</button>
@@ -586,13 +639,6 @@
           <button class="icon-btn" data-action="next-month" aria-label="${esc(t('nextMonth'))}" ${atCurrent ? 'disabled' : ''}>›</button>
         </div>
         <div class="cal-grid">${cells}</div>
-        <div class="cal-filter">
-          <span class="label">${esc(t('calFilter'))}</span>
-          <div class="filter-chips">
-            <button class="fchip ${ui.calFeel ? '' : 'on'}" data-action="cal-feel" data-feel="" aria-pressed="${!ui.calFeel}">${esc(t('filterAll'))}</button>
-            ${FEELS.map(f => `<button class="fchip ${ui.calFeel === f.key ? 'on' : ''}" data-action="cal-feel" data-feel="${f.key}" aria-pressed="${ui.calFeel === f.key}" style="--c:var(--mood-${f.mood})"><i class="mdot-s"></i>${esc(t('feel_' + f.key))}</button>`).join('')}
-          </div>
-        </div>
       </section>`;
     const r = `
       <section class="block">
@@ -1092,7 +1138,6 @@
       $$('.seg-corner button').forEach(b => { const on = b.dataset.corner === state.settings.corner; b.classList.toggle('on', on); b.setAttribute('aria-checked', on); });
     },
     'page-next': () => turnPage(1),
-    'cal-feel': el => { ui.calFeel = el.dataset.feel || null; render({ anim: false }); },
     'open-book': () => openBook(),
 
     'toggle-details': el => {
@@ -1108,11 +1153,22 @@
       const key = el.dataset.feel;
       if (sel.feel === key) { sel.feel = null; sel.words = []; }
       else { sel.feel = key; sel.words = []; }
-      const box = el.closest('.feel');
-      box.outerHTML = feelPicker(scope, sel);
+      refreshPicker(scope);
       const nb = $(`.feel[data-scope="${scope}"]`);
       nb?.querySelector('.feel-more')?.classList.add('appear');
       nb?.querySelector(`[data-feel="${key}"]`)?.focus();
+    },
+    'emoji-panel': el => {
+      ui.emojiPanel = ui.emojiPanel === el.dataset.scope ? null : el.dataset.scope;
+      refreshPicker(el.dataset.scope);
+      $(`#${el.dataset.scope}-emoji-type`)?.focus();
+    },
+    'emoji-pick': el => addCustomFeel(el.dataset.scope, el.dataset.emoji, ($(`#${el.dataset.scope}-emoji-name`)?.value || '').trim()),
+    'emoji-add': el => addCustomFeel(el.dataset.scope, $(`#${el.dataset.scope}-emoji-type`)?.value, ($(`#${el.dataset.scope}-emoji-name`)?.value || '').trim()),
+    'emoji-remove': el => {
+      state.settings.customFeels = customFeels().filter(c => c.emoji !== el.dataset.emoji);
+      persist();
+      refreshPicker(el.dataset.scope);
     },
     'toggle-word': el => {
       const sel = el.dataset.scope === 'edit' ? ui.editFeel : ui.draftFeel;
@@ -1134,17 +1190,19 @@
       const text = ($('#moment-text')?.value || '').trim();
       const title = ($('#moment-title')?.value || '').trim();
       const df = ui.draftFeel;
-      if (!text && !title && !df.feel) { shake($('#composer')); toast(t('writeSomething')); $('#moment-text')?.focus(); return; }
+      if (!text && !title && !df.feel && !df.note.trim()) { shake($('#composer')); toast(t('writeSomething')); $('#moment-text')?.focus(); return; }
       const now = new Date();
       const tv = $('#moment-time')?.value || '';
       let time = now.getTime();
       if (tv && (ui.draft.time || ui.date !== todayKey())) time = timeOn(ui.date, tv);
-      const m = { id: uid(), time, title, text, mood: df.feel ? FEEL[df.feel].mood : null, feel: df.feel, feelWords: [...df.words], feelNote: df.note.trim(), tags: [...ui.draft.tags] };
+      const fi = feelInfo(df.feel, df.name);
+      const m = { id: uid(), time, title, text, mood: fi && fi.mood ? fi.mood : null, feel: df.feel, feelName: fi?.custom ? fi.name : '', feelWords: [...df.words], feelNote: df.note.trim(), tags: [...ui.draft.tags] };
       ensureDay(ui.date).moments.push(m);
       persist();
       burst(el);
       ui.draft = { title: '', time: '', text: '', mood: null, tags: [] };
       ui.draftFeel = { feel: null, words: [], note: '' };
+      ui.emojiPanel = null;
       ui.detailsOpen = false;
       ui.justAdded = m.id;
       render({ anim: false });
@@ -1155,7 +1213,8 @@
       const m = day(ui.date)?.moments.find(x => x.id === el.dataset.id);
       if (!m) return;
       ui.editing = m.id;
-      ui.editFeel = { feel: m.feel || null, words: [...(m.feelWords || [])], note: m.feelNote || '' };
+      ui.editFeel = { feel: m.feel || null, name: m.feelName || '', words: [...(m.feelWords || [])], note: m.feelNote || '' };
+      ui.emojiPanel = null;
       render({ anim: false });
     },
     'edit-mood': el => {
@@ -1169,15 +1228,15 @@
       const title = ($('#edit-title')?.value || '').trim();
       if (!m) return;
       const ef = ui.editFeel;
-      if (!text && !title && !ef.feel && !m.mood) { shake(el.closest('.mbody')); toast(t('writeSomething')); return; }
+      if (!text && !title && !ef.feel && !m.mood && !ef.note.trim()) { shake(el.closest('.mbody')); toast(t('writeSomething')); return; }
       const tv = $('#edit-time')?.value || '';
       const newTime = tv && tv !== hhmm(new Date(m.time)) ? timeOn(ui.date, tv) : m.time;
-      const feelChanged = ef.feel !== (m.feel || null) || ef.note.trim() !== (m.feelNote || '') || ef.words.join('|') !== (m.feelWords || []).join('|');
+      const feelChanged = ef.feel !== (m.feel || null) || (ef.name || '') !== (m.feelName || '') || ef.note.trim() !== (m.feelNote || '') || ef.words.join('|') !== (m.feelWords || []).join('|');
       if (text !== m.text || title !== (m.title || '') || feelChanged || newTime !== m.time) {
         m.text = text;
         m.title = title;
         m.time = newTime;
-        if (ef.feel || m.feel) { m.feel = ef.feel; m.mood = ef.feel ? FEEL[ef.feel].mood : null; }
+        if (ef.feel || m.feel) { const fi = feelInfo(ef.feel, ef.name); m.feel = ef.feel; m.mood = fi && fi.mood ? fi.mood : null; m.feelName = fi?.custom ? fi.name : ''; }
         m.feelWords = ef.feel ? [...ef.words] : [];
         m.feelNote = ef.note.trim();
         m.editedAt = Date.now();
@@ -1285,7 +1344,7 @@
           const ids = new Set(cur.moments.map(m => m.id));
           for (const m of (Array.isArray(d.moments) ? d.moments : [])) {
             if (m && m.id && !ids.has(m.id) && typeof m.time === 'number') {
-              cur.moments.push({ id: String(m.id), time: m.time, title: String(m.title || '').slice(0, 80), text: String(m.text || ''), feel: FEEL[m.feel] ? m.feel : null, feelWords: Array.isArray(m.feelWords) ? m.feelWords.map(String).slice(0, 12) : [], feelNote: String(m.feelNote || ''), mood: [1, 2, 3, 4, 5].includes(m.mood) ? m.mood : null, tags: Array.isArray(m.tags) ? m.tags.filter(x => TAGS.includes(x)) : [], ...(m.editedAt ? { editedAt: Number(m.editedAt) } : {}) });
+              cur.moments.push({ id: String(m.id), time: m.time, title: String(m.title || '').slice(0, 80), text: String(m.text || ''), feel: (FEEL[m.feel] || (typeof m.feel === 'string' && m.feel.startsWith('c:'))) ? m.feel : null, feelName: String(m.feelName || '').slice(0, 24), feelWords: Array.isArray(m.feelWords) ? m.feelWords.map(String).slice(0, 12) : [], feelNote: String(m.feelNote || ''), mood: [1, 2, 3, 4, 5].includes(m.mood) ? m.mood : null, tags: Array.isArray(m.tags) ? m.tags.filter(x => TAGS.includes(x)) : [], ...(m.editedAt ? { editedAt: Number(m.editedAt) } : {}) });
             }
           }
           if (d.review && typeof d.review === 'object' && !reviewFilled(cur.review)) cur.review = d.review;
@@ -1334,7 +1393,8 @@
 
   document.addEventListener('keydown', e => {
     const mod = e.key === 'Enter' && (e.metaKey || e.ctrlKey);
-    if ((e.target.id === 'moment-text' || e.target.id === 'moment-title') && mod) { e.preventDefault(); actions['save-moment']($('[data-action="save-moment"]')); }
+    if (/-emoji-(type|name)$/.test(e.target.id || '') && e.key === 'Enter') { e.preventDefault(); const sc = e.target.id.split('-')[0]; addCustomFeel(sc, $(`#${sc}-emoji-type`)?.value, ($(`#${sc}-emoji-name`)?.value || '').trim()); }
+    else if ((e.target.id === 'moment-text' || e.target.id === 'moment-title') && mod) { e.preventDefault(); actions['save-moment']($('[data-action="save-moment"]')); }
     else if ((e.target.id === 'edit-text' || e.target.id === 'edit-title') && mod) { e.preventDefault(); actions['save-edit']($('[data-action="save-edit"]')); }
     else if (e.target.id === 'edit-text' && e.key === 'Escape') actions['cancel-edit']();
     else if (e.target.classList?.contains('cover') && (e.key === 'Enter' || e.key === ' ')) { e.preventDefault(); openBook(); }
