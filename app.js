@@ -14,7 +14,7 @@
   const MOOD_EMOJI = { 1: '😢', 2: '😕', 3: '😐', 4: '🙂', 5: '😄' };
   const TAGS = ['family', 'friends', 'work', 'school', 'idea', 'health', 'nature', 'gratitude'];
   const TAG_EMOJI = { family: '🏡', friends: '🤝', work: '💼', school: '📚', idea: '💡', health: '💪', nature: '🌳', gratitude: '🙏' };
-  const VIEWS = ['today', 'pages', 'review', 'calendar', 'settings'];
+  const VIEWS = ['pages', 'calendar', 'today', 'settings'];
   const REVIEW_FIELDS = ['best', 'grateful', 'different', 'intention'];
   const svg = p => `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${p}</svg>`;
   const ICONS = {
@@ -55,7 +55,7 @@
   };
 
   /* ---------- Zustand ---------- */
-  const defaultState = () => ({ settings: { lang: null, theme: 'light', young: false, name: '' }, days: {} });
+  const defaultState = () => ({ settings: { lang: null, theme: 'light', young: false, name: '', corner: 'quote' }, days: {} });
   function load() {
     try {
       const raw = localStorage.getItem(STORE_KEY);
@@ -89,6 +89,9 @@
     editing: null,
     editMood: null,
     pageIndex: null,
+    pagesMonth: (() => { const d = new Date(); return new Date(d.getFullYear(), d.getMonth(), 1); })(),
+    reviewOpen: false,
+    quoteShift: 0,
     calMonth: (() => { const d = new Date(); return new Date(d.getFullYear(), d.getMonth(), 1); })(),
     onbLang: detectLang(),
     justAdded: null,
@@ -140,12 +143,32 @@
     return list[doy % list.length];
   }
 
+  function quote() {
+    const list = t('quotes');
+    const d = new Date();
+    const doy = Math.floor((d - new Date(d.getFullYear(), 0, 0)) / 864e5);
+    return list[(doy + ui.quoteShift) % list.length];
+  }
+  function dailyCorner() {
+    const mode = state.settings.corner || 'quote';
+    if (mode === 'off') return '';
+    if (mode === 'question') return `<p class="spark"><span class="spark-label">${esc(t('sparkLabel'))}</span><span>${esc(spark())}</span></p>`;
+    const q = quote();
+    return `
+      <figure class="quote">
+        <span class="spark-label">${esc(t('quoteLabel'))}</span>
+        <blockquote>${esc(q.t)}</blockquote>
+        <figcaption>— ${esc(q.a || t('proverbLabel'))}</figcaption>
+        <button class="icon-btn small ghost quote-next" data-action="next-quote" aria-label="${esc(t('anotherQuote'))}" title="${esc(t('anotherQuote'))}">↻</button>
+      </figure>`;
+  }
+
   /* ---------- Datenzugriff ---------- */
   const day = k => state.days[k];
   const ensureDay = k => (state.days[k] ||= { moments: [], review: null });
   const reviewFilled = r => !!r && !!(r.savedAt || r.rating || (r.word || '').trim() || REVIEW_FIELDS.some(f => (r[f] || '').trim()));
-  const hasContent = k => { const d = day(k); return !!d && (d.moments.length > 0 || reviewFilled(d.review)); };
-  function cleanup(k) { const d = day(k); if (d && !d.moments.length && !reviewFilled(d.review)) delete state.days[k]; }
+  const hasContent = k => { const d = day(k); return !!d && (d.moments.length > 0 || reviewFilled(d.review) || !!(d.title || '').trim()); };
+  function cleanup(k) { if (day(k) && !hasContent(k)) delete state.days[k]; }
   function dayMood(k) {
     const d = day(k); if (!d) return 0;
     const ms = d.moments.filter(m => m.mood).map(m => m.mood);
@@ -243,9 +266,10 @@
       <header class="hero">
         <p class="eyebrow">${esc(fmt(dateOf(k), { weekday: 'long', day: 'numeric', month: 'long' }))}</p>
         <h1 class="title">${title}</h1>
-        ${isToday ? `<p class="spark"><span class="spark-label">${esc(t('sparkLabel'))}</span><span>${esc(spark())}</span></p>` : ''}
+        ${isToday ? dailyCorner() : ''}
       </header>
       ${dayNav(k)}
+      <input id="day-title" class="day-title" type="text" maxlength="80" placeholder="${esc(t('titlePlaceholder'))}" aria-label="${esc(t('titlePlaceholder'))}" value="${esc(d?.title || '')}">
       <section class="composer" id="composer">
         <textarea id="moment-text" class="lined" rows="4" placeholder="${esc(tq('placeholder'))}" aria-label="${esc(t('placeholder'))}">${esc(ui.draft.text)}</textarea>
         <div class="details ${ui.detailsOpen ? 'open' : ''}" id="details">
@@ -270,19 +294,84 @@
       ${heading(t('momentsCount', moments.length))}
       ${moments.length
         ? `<ol class="timeline">${moments.map(momentItem).join('')}</ol>`
-        : `<div class="empty"><div class="empty-orb">${ICONS.leaf}</div><p>${esc(isToday ? t('emptyDay') : t('emptyPast'))}</p></div>`}`;
+        : `<div class="empty"><div class="empty-orb">${ICONS.leaf}</div><p>${esc(isToday ? t('emptyDay') : t('emptyPast'))}</p></div>`}
+      ${reviewPanel(k)}`;
     return { l, r };
   }
 
+  // Tagesbewertung: aufklappbar im Bereich „Heute“
+  function reviewPanel(k) {
+    const r = day(k)?.review || {};
+    const open = ui.reviewOpen;
+    const field = f => `
+      <label class="field">
+        <span class="field-label">${esc(tq(f))}</span>
+        <textarea class="lined" rows="2" data-field="${f}" placeholder="${esc(t('fieldPlaceholder'))}">${esc(r[f] || '')}</textarea>
+      </label>`;
+    return `
+      <section class="review-panel ${open ? 'open' : ''}" id="review-panel">
+        <button class="review-toggle" data-action="toggle-review" aria-expanded="${open}" aria-controls="review-body">
+          <span class="rv-icon">${ICONS.review}</span>
+          <span class="rv-text"><strong>${esc(t('reviewTitle'))}</strong><small>${esc(t('reviewIntro'))}</small></span>
+          ${r.rating ? `<span class="rv-stars" aria-label="${r.rating}/5">${'★'.repeat(r.rating)}</span>` : ''}
+          ${r.savedAt ? '<span class="rv-done" aria-hidden="true">✓</span>' : ''}
+          <span class="chev" aria-hidden="true">⌄</span>
+        </button>
+        <div class="details ${open ? 'open' : ''}" id="review-body">
+          <div class="details-inner">
+            <div class="rv-content">
+              <span class="label">${esc(t('rating'))}</span>
+              <div class="stars" role="radiogroup" aria-label="${esc(t('rating'))}">
+                ${[1, 2, 3, 4, 5].map(v => `<button class="star ${(r.rating || 0) >= v ? 'on' : ''}" data-action="rate" data-v="${v}" role="radio" aria-checked="${r.rating === v}" aria-label="${v}/5">★</button>`).join('')}
+              </div>
+              ${REVIEW_FIELDS.map(field).join('')}
+              <label class="field">
+                <span class="field-label">${esc(t('word'))}</span>
+                <input type="text" class="lined-input" data-field="word" maxlength="40" placeholder="${esc(t('wordPlaceholder'))}" value="${esc(r.word || '')}">
+              </label>
+              <button class="btn primary" data-action="save-review">${esc(t('saveReview'))}</button>
+              ${r.savedAt ? `<p class="done-note">✓ ${esc(t('reviewDone'))} · ${esc(fmtTime(r.savedAt))}</p>` : ''}
+            </div>
+          </div>
+        </div>
+      </section>`;
+  }
+
   /* ---------- Bereich: Seiten (das Buch selbst) ---------- */
+  function miniCalendar(list) {
+    const idx = {};
+    list.forEach((k, i) => { if (i) idx[k] = i; });
+    const m = ui.pagesMonth;
+    const daysIn = new Date(m.getFullYear(), m.getMonth() + 1, 0).getDate();
+    const offset = (new Date(m.getFullYear(), m.getMonth(), 1).getDay() + 6) % 7;
+    const tk = todayKey();
+    const now = new Date();
+    const atCurrent = m.getFullYear() === now.getFullYear() && m.getMonth() === now.getMonth();
+    let cells = Array.from({ length: 7 }, (_, i) => `<span class="wd">${esc(fmt(new Date(2024, 0, 1 + i), { weekday: 'narrow' }))}</span>`).join('');
+    cells += '<span></span>'.repeat(offset);
+    for (let n = 1; n <= daysIn; n++) {
+      const k = keyOf(new Date(m.getFullYear(), m.getMonth(), n));
+      cells += idx[k]
+        ? `<button class="mday ${k === tk ? 'today' : ''}" data-action="goto-page" data-i="${idx[k]}" style="--c:var(--mood-${dayMood(k)})" title="${esc(day(k).title || '')}">${n}</button>`
+        : `<span class="mday ${k === tk ? 'today' : ''}">${n}</span>`;
+    }
+    return `
+      <div class="mini-cal">
+        <div class="mini-head">
+          <button class="icon-btn small" data-action="pcal-prev" aria-label="${esc(t('prevMonth'))}">‹</button>
+          <strong>${esc(fmt(m, { month: 'long', year: 'numeric' }))}</strong>
+          <button class="icon-btn small" data-action="pcal-next" aria-label="${esc(t('nextMonth'))}" ${atCurrent ? 'disabled' : ''}>›</button>
+        </div>
+        <div class="mini-grid">${cells}</div>
+      </div>`;
+  }
+
   function tocPage(list) {
     const days = list.slice(1);
+    let html = `<div class="page-content"><h2 class="toc-title">${esc(t('toc'))}</h2>${miniCalendar(list)}`;
     if (!days.length) {
-      return `
-        <h2 class="toc-title">${esc(t('toc'))}</h2>
-        <div class="empty"><div class="empty-orb">${ICONS.leaf}</div><p>${esc(t('bookEmpty'))}</p></div>`;
+      return html + `<div class="empty"><p>${esc(t('bookEmpty'))}</p></div><div class="ruled-fill" aria-hidden="true"></div></div>`;
     }
-    let html = `<h2 class="toc-title">${esc(t('toc'))}</h2>`;
     let month = '';
     days.forEach((k, i) => {
       const d = dateOf(k);
@@ -292,15 +381,17 @@
         month = mKey;
         html += `<h3 class="toc-month">${esc(fmt(d, { month: 'long', year: 'numeric' }))}</h3><ol class="toc-list">`;
       }
-      const first = day(k).moments.slice().sort((a, b) => a.time - b.time).find(m => m.text)?.text || day(k).review?.word || '';
+      const dd = day(k);
+      const first = dd.moments.slice().sort((a, b) => a.time - b.time).find(m => m.text)?.text || dd.review?.word || '';
+      const label = (dd.title || '').trim();
       html += `
         <li><button class="toc-item" data-action="goto-page" data-i="${i + 1}">
           <span class="toc-day">${d.getDate()}</span>
-          <span class="toc-text">${esc(trunc(first, 60))}</span>
+          <span class="toc-text ${label ? 'titled' : ''}">${esc(trunc(label || first, 60))}</span>
           <span class="toc-no">${i + 1}</span>
         </button></li>`;
     });
-    return html + '</ol>';
+    return html + '</ol><div class="ruled-fill" aria-hidden="true"></div></div>';
   }
 
   function dayPage(k, no) {
@@ -308,30 +399,40 @@
     const ms = [...d.moments].sort((a, b) => a.time - b.time);
     const r = d.review;
     const stars = r?.rating ? '★'.repeat(r.rating) + '☆'.repeat(5 - r.rating) : '';
+    const moods = ms.filter(m => m.mood);
     const lines = REVIEW_FIELDS.filter(f => (r?.[f] || '').trim()).map(f => `
       <p class="pr-line"><span class="pr-label">${esc(tq(f))}</span>${esc(r[f])}</p>`).join('');
+    const title = (d.title || '').trim();
     return `
-      <div class="page-head">
-        <span class="page-weekday">${esc(fmt(dateOf(k), { weekday: 'long' }))}</span>
-        <span class="page-date">${esc(fmt(dateOf(k), { day: 'numeric', month: 'long', year: 'numeric' }))}</span>
-      </div>
-      ${ms.length ? `<ol class="page-lines">
-        ${ms.map(m => `<li><time>${esc(fmtTime(m.time))}</time><span class="pl-text">${m.mood ? `<i class="pl-mood" style="--c:var(--mood-${m.mood})" title="${esc(t('mood' + m.mood))}"></i>` : ''}${highlightTags(esc(m.text || t('mood' + m.mood)))}</span></li>`).join('')}
-      </ol>` : ''}
-      ${reviewFilled(r) ? `
-        <div class="page-review">
-          <h3>${esc(t('review'))}${stars ? ` <span class="pr-stars" aria-label="${r.rating}/5">${stars}</span>` : ''}</h3>
-          ${lines}
-          ${(r.word || '').trim() ? `<p class="page-word">„${esc(r.word)}“</p>` : ''}
-        </div>` : ''}
-      <footer class="page-foot">
-        <button class="link-btn" data-action="open-day" data-k="${k}">${esc(t('openDay'))} →</button>
-        <span class="page-no">${no}</span>
-      </footer>`;
+      <div class="page-content">
+        <div class="page-head">
+          <span class="page-weekday">${esc(fmt(dateOf(k), { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' }))}</span>
+          <h2 class="page-title ${title ? '' : 'untitled'}">${esc(title || t('untitled'))}</h2>
+          <div class="page-meta">
+            ${moods.length ? `<span class="mood-strip" aria-hidden="true">${moods.map(m => `<i style="--c:var(--mood-${m.mood})"></i>`).join('')}</span>` : ''}
+            ${stars ? `<span class="pr-stars" aria-label="${r.rating}/5">${stars}</span>` : ''}
+            <span>${esc(t('momentsCount', ms.length))}</span>
+          </div>
+        </div>
+        ${ms.length ? `<ol class="page-lines">
+          ${ms.map(m => `<li><time>${esc(fmtTime(m.time))}</time><span class="pl-text">${m.mood ? `<i class="pl-mood" style="--c:var(--mood-${m.mood})" title="${esc(t('mood' + m.mood))}"></i>` : ''}${highlightTags(esc(m.text || t('mood' + m.mood)))}</span></li>`).join('')}
+        </ol>` : ''}
+        ${reviewFilled(r) ? `
+          <div class="page-review">
+            <h3>${esc(t('review'))}</h3>
+            ${lines}
+            ${(r.word || '').trim() ? `<p class="page-word">„${esc(r.word)}“</p>` : ''}
+          </div>` : ''}
+        <div class="ruled-fill" aria-hidden="true"></div>
+        <footer class="page-foot">
+          <button class="link-btn" data-action="open-day" data-k="${k}">${esc(t('openDay'))} →</button>
+          <span class="page-no">${no}</span>
+        </footer>
+      </div>`;
   }
 
   function pageContent(list, i) {
-    if (i >= list.length) return `<div class="page-end"><span class="fleuron" aria-hidden="true">❦</span><p>${esc(t('toBeContinued'))}</p></div>`;
+    if (i >= list.length) return `<div class="page-content"><div class="page-end"><span class="fleuron" aria-hidden="true">❦</span><p>${esc(t('toBeContinued'))}</p></div><div class="ruled-fill" aria-hidden="true"></div></div>`;
     return list[i] === 'toc' ? tocPage(list) : dayPage(list[i], i);
   }
 
@@ -357,50 +458,6 @@
     <button class="corner corner-${dir}" data-action="page-${dir}" aria-label="${esc(t(dir === 'prev' ? 'prevPage' : 'nextPage'))}" ${enabled ? '' : 'hidden'}>
       <span aria-hidden="true">${dir === 'prev' ? '‹' : '›'}</span>
     </button>`;
-
-  /* ---------- Bereich: Rückblick ---------- */
-  function renderReview() {
-    const k = ui.date;
-    const d = day(k);
-    const r = d?.review || {};
-    const moments = d ? [...d.moments].sort((a, b) => a.time - b.time) : [];
-    const field = f => `
-      <label class="field">
-        <span class="field-label">${esc(tq(f))}</span>
-        <textarea class="lined" rows="2" data-field="${f}" placeholder="${esc(t('fieldPlaceholder'))}">${esc(r[f] || '')}</textarea>
-      </label>`;
-    const l = `
-      <header class="hero">
-        <p class="eyebrow">${esc(fmt(dateOf(k), { weekday: 'long', day: 'numeric', month: 'long' }))}</p>
-        <h1 class="title">${esc(t('reviewTitle'))}</h1>
-        <p class="sub">${esc(t('reviewIntro'))}</p>
-      </header>
-      ${dayNav(k)}
-      ${moments.length ? `
-        <section class="block">
-          ${heading(t('todaysMoments'))}
-          <ol class="page-lines compact">
-            ${moments.map(m => `<li><time>${esc(fmtTime(m.time))}</time><span class="pl-text">${m.mood ? `<i class="pl-mood" style="--c:var(--mood-${m.mood})"></i>` : ''}${esc(trunc(m.text || t('mood' + m.mood), 90))}</span></li>`).join('')}
-          </ol>
-        </section>` : ''}
-      <section class="block">
-        ${heading(t('rating'))}
-        <div class="stars" role="radiogroup" aria-label="${esc(t('rating'))}">
-          ${[1, 2, 3, 4, 5].map(v => `<button class="star ${(r.rating || 0) >= v ? 'on' : ''}" data-action="rate" data-v="${v}" role="radio" aria-checked="${r.rating === v}" aria-label="${v}/5">★</button>`).join('')}
-        </div>
-      </section>`;
-    const rr = `
-      <section class="block form">
-        ${REVIEW_FIELDS.map(field).join('')}
-        <label class="field">
-          <span class="field-label">${esc(t('word'))}</span>
-          <input type="text" class="lined-input" data-field="word" maxlength="40" placeholder="${esc(t('wordPlaceholder'))}" value="${esc(r.word || '')}">
-        </label>
-      </section>
-      <button class="btn primary big" data-action="save-review">${esc(t('saveReview'))}</button>
-      ${r.savedAt ? `<p class="done-note">✓ ${esc(t('reviewDone'))} · ${esc(fmtTime(r.savedAt))}</p>` : ''}`;
-    return { l, r: rr };
-  }
 
   /* ---------- Bereich: Kalender ---------- */
   function renderCalendar() {
@@ -467,6 +524,7 @@
     const hits = [];
     for (const k of Object.keys(state.days).sort().reverse()) {
       const d = state.days[k];
+      if ((d.title || '').toLocaleLowerCase().includes(q)) hits.push({ k, text: d.title, mood: dayMood(k) });
       for (const m of d.moments) if ((m.text || '').toLocaleLowerCase().includes(q)) hits.push({ k, text: m.text, mood: m.mood });
       if (d.review) for (const f of [...REVIEW_FIELDS, 'word']) {
         const v = d.review[f] || '';
@@ -510,8 +568,14 @@
       </section>
       <section class="block">
         ${heading(t('appearance'))}
-        <div class="seg" role="radiogroup">
+        <div class="seg seg-theme" role="radiogroup">
           ${['light', 'dark', 'auto'].map(th => `<button class="${s.theme === th ? 'on' : ''}" data-action="set-theme" data-theme="${th}" role="radio" aria-checked="${s.theme === th}">${esc(t('theme' + th[0].toUpperCase() + th.slice(1)))}</button>`).join('')}
+        </div>
+      </section>
+      <section class="block">
+        ${heading(t('cornerTitle'))}
+        <div class="seg seg-corner wrap" role="radiogroup">
+          ${['quote', 'question', 'off'].map(c => `<button class="${(s.corner || 'quote') === c ? 'on' : ''}" data-action="set-corner" data-corner="${c}" role="radio" aria-checked="${(s.corner || 'quote') === c}">${esc(t('corner_' + c))}</button>`).join('')}
         </div>
       </section>`;
     const r = `
@@ -542,7 +606,7 @@
   }
 
   /* ---------- Rendering ---------- */
-  const RENDERERS = { today: renderToday, pages: renderPages, review: renderReview, calendar: renderCalendar, settings: renderSettings };
+  const RENDERERS = { pages: renderPages, calendar: renderCalendar, today: renderToday, settings: renderSettings };
 
   function buildNav() {
     $('#nav').innerHTML = VIEWS.map((v, i) =>
@@ -851,11 +915,33 @@
     'go-today': () => flip(1, () => { ui.date = todayKey(); ui.editing = null; }),
     'open-day': el => {
       const k = el.dataset.k;
-      const dir = ui.view === 'today' ? (k < ui.date ? -1 : 1) : -1;
+      const dir = ui.view === 'today' ? (k < ui.date ? -1 : 1) : Math.sign(VIEWS.indexOf('today') - VIEWS.indexOf(ui.view));
       flip(dir, () => { ui.date = k; ui.view = 'today'; ui.editing = null; });
     },
     'goto-page': el => flip(1, () => { ui.pageIndex = Number(el.dataset.i); }),
     'page-prev': () => turnPage(-1),
+    'pcal-prev': () => { ui.pagesMonth = new Date(ui.pagesMonth.getFullYear(), ui.pagesMonth.getMonth() - 1, 1); render({ anim: false }); },
+    'pcal-next': () => { ui.pagesMonth = new Date(ui.pagesMonth.getFullYear(), ui.pagesMonth.getMonth() + 1, 1); render({ anim: false }); },
+    'next-quote': el => {
+      ui.quoteShift++;
+      const fig = el.closest('.quote');
+      if (!fig) return;
+      fig.outerHTML = dailyCorner();
+      $('.quote')?.classList.add('swap');
+    },
+    'toggle-review': el => {
+      ui.reviewOpen = !ui.reviewOpen;
+      const panel = $('#review-panel');
+      panel.classList.toggle('open', ui.reviewOpen);
+      $('#review-body').classList.toggle('open', ui.reviewOpen);
+      el.setAttribute('aria-expanded', ui.reviewOpen);
+      if (ui.reviewOpen) $$('#review-body textarea').forEach(autosize);
+    },
+    'set-corner': el => {
+      state.settings.corner = el.dataset.corner;
+      persist();
+      $$('.seg-corner button').forEach(b => { const on = b.dataset.corner === state.settings.corner; b.classList.toggle('on', on); b.setAttribute('aria-checked', on); });
+    },
     'page-next': () => turnPage(1),
     'open-book': () => openBook(),
 
@@ -952,6 +1038,7 @@
       persist();
       burst(el);
       celebrate(t('reviewSaved'));
+      ui.reviewOpen = false;
       render({ anim: false });
     },
 
@@ -963,7 +1050,7 @@
       state.settings.theme = el.dataset.theme;
       persist();
       applyTheme();
-      $$('.seg button').forEach(b => { const on = b.dataset.theme === state.settings.theme; b.classList.toggle('on', on); b.setAttribute('aria-checked', on); });
+      $$('.seg-theme button').forEach(b => { const on = b.dataset.theme === state.settings.theme; b.classList.toggle('on', on); b.setAttribute('aria-checked', on); });
     },
     export: () => {
       const json = JSON.stringify({ app: 'momente', version: 1, exportedAt: new Date().toISOString(), ...state }, null, 2);
@@ -1020,6 +1107,7 @@
             }
           }
           if (d.review && typeof d.review === 'object' && !reviewFilled(cur.review)) cur.review = d.review;
+          if (typeof d.title === 'string' && !(cur.title || '').trim()) cur.title = d.title.slice(0, 80);
           cleanup(k);
         }
         persist();
@@ -1043,6 +1131,7 @@
     if (el.tagName === 'TEXTAREA') autosize(el);
     if (el.id === 'moment-text') ui.draft.text = el.value;
     else if (el.id === 'search') runSearch(el.value);
+    else if (el.id === 'day-title') { ensureDay(ui.date).title = el.value; cleanup(ui.date); persist(false); }
     else if (el.id === 'name-input') { state.settings.name = el.value.trim(); persist(false); }
     else if (el.dataset.field) {
       const d = ensureDay(ui.date);
