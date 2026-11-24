@@ -14,12 +14,12 @@
   const MOOD_EMOJI = { 1: '😢', 2: '😕', 3: '😐', 4: '🙂', 5: '😄' };
   const TAGS = ['family', 'friends', 'work', 'school', 'idea', 'health', 'nature', 'gratitude'];
   const TAG_EMOJI = { family: '🏡', friends: '🤝', work: '💼', school: '📚', idea: '💡', health: '💪', nature: '🌳', gratitude: '🙏' };
-  const VIEWS = ['today', 'book', 'review', 'calendar', 'settings'];
+  const VIEWS = ['today', 'pages', 'review', 'calendar', 'settings'];
   const REVIEW_FIELDS = ['best', 'grateful', 'different', 'intention'];
   const svg = p => `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${p}</svg>`;
   const ICONS = {
     today: svg('<path d="M12 20h9"/><path d="M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4Z"/>'),
-    book: svg('<path d="M2 4h6a4 4 0 0 1 4 4v13a3 3 0 0 0-3-3H2Z"/><path d="M22 4h-6a4 4 0 0 0-4 4v13a3 3 0 0 1 3-3h7Z"/>'),
+    pages: svg('<path d="M2 4h6a4 4 0 0 1 4 4v13a3 3 0 0 0-3-3H2Z"/><path d="M22 4h-6a4 4 0 0 0-4 4v13a3 3 0 0 1 3-3h7Z"/>'),
     review: svg('<path d="M21 12.8A9 9 0 1 1 11.2 3a7 7 0 0 0 9.8 9.8Z"/>'),
     calendar: svg('<rect x="3" y="4" width="18" height="18" rx="3"/><path d="M16 2v4M8 2v4M3 10h18"/>'),
     settings: svg('<path d="M4 21v-7M4 10V3M12 21v-9M12 8V3M20 21v-5M20 12V3M1 14h6M9 8h6M17 16h6"/>'),
@@ -27,12 +27,11 @@
     trash: svg('<path d="M3 6h18M8 6V4h8v2M6 6l1 14h10l1-14"/>'),
     leaf: svg('<path d="M11 20A7 7 0 0 1 9.8 6.1C15.5 5 17 4.5 19 2c1 2 2 4.2 2 8 0 5.5-4.8 10-10 10Z"/><path d="M2 21c0-3 1.9-5.4 5.1-6"/>')
   };
-  const LOGO = `
+  const COVER_LOGO = `
     <svg class="logo" viewBox="0 0 120 120" aria-hidden="true">
-      <defs><linearGradient id="lg" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#9fd8a8"/><stop offset="1" stop-color="#3d9467"/></linearGradient></defs>
-      <circle class="logo-glow" cx="60" cy="60" r="44" fill="url(#lg)"/>
-      <g class="logo-orbit"><circle cx="60" cy="9" r="5" fill="#e9c46a"/></g>
-      <path class="logo-spark" fill="#fff" d="M60 32C62 51 69 58 88 60 69 62 62 69 60 88 58 69 51 62 32 60 51 58 58 51 60 32Z"/>
+      <circle class="logo-ring" cx="60" cy="60" r="44" fill="none" stroke="rgba(255,255,255,.75)" stroke-width="2"/>
+      <g class="logo-orbit"><circle cx="60" cy="16" r="5" fill="#f1d27a"/></g>
+      <path class="logo-spark" fill="#fff" d="M60 34C62 52 68 58 86 60 68 62 62 68 60 86 58 68 52 62 34 60 52 58 58 52 60 34Z"/>
     </svg>`;
 
   /* ---------- Hilfsfunktionen ---------- */
@@ -47,7 +46,13 @@
   const shiftMonths = (k, n) => { const d = dateOf(k); const day = d.getDate(); d.setDate(1); d.setMonth(d.getMonth() + n); const last = new Date(d.getFullYear(), d.getMonth() + 1, 0).getDate(); d.setDate(Math.min(day, last)); return keyOf(d); };
   const uid = () => Date.now().toString(36) + Math.random().toString(36).slice(2, 7);
   const prefersReduced = () => window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+  const wideMQ = window.matchMedia('(min-width: 900px)');
+  const isWide = () => wideMQ.matches;
   const trunc = (s, n) => (s || '').length > n ? s.slice(0, n) + '…' : (s || '');
+  const session = {
+    get(k) { try { return sessionStorage.getItem(k); } catch (e) { return null; } },
+    set(k, v) { try { sessionStorage.setItem(k, v); } catch (e) { /* egal */ } }
+  };
 
   /* ---------- Zustand ---------- */
   const defaultState = () => ({ settings: { lang: null, theme: 'light', young: false, name: '' }, days: {} });
@@ -83,10 +88,11 @@
     detailsOpen: false,
     editing: null,
     editMood: null,
-    bookIndex: null,
+    pageIndex: null,
     calMonth: (() => { const d = new Date(); return new Date(d.getFullYear(), d.getMonth(), 1); })(),
     onbLang: detectLang(),
-    justAdded: null
+    justAdded: null,
+    coverTimer: null
   };
 
   /* ---------- i18n ---------- */
@@ -152,7 +158,8 @@
     while (hasContent(k)) { n++; k = addDays(k, -1); }
     return n;
   }
-  const bookPages = () => Object.keys(state.days).filter(hasContent).sort();
+  const writtenDays = () => Object.keys(state.days).filter(hasContent).sort();
+  const pageList = () => ['toc', ...writtenDays()];
 
   /* ---------- Gemeinsame Bausteine ---------- */
   function dayNav(k) {
@@ -171,14 +178,15 @@
       ${young() ? `<span aria-hidden="true">${MOOD_EMOJI[v]}</span>` : '<i class="mdot" aria-hidden="true"></i>'}${esc(t('mood' + v))}
     </button>`).join('');
   const tagLabel = tag => `${young() ? TAG_EMOJI[tag] + ' ' : ''}${esc(t('tag_' + tag))}`;
+  const heading = text => `<h2 class="h2"><span>${esc(text)}</span></h2>`;
 
-  /* ---------- Ansicht: Heute ---------- */
+  /* ---------- Bereich: Heute ---------- */
   function memoryCard(k) {
     for (const [label, key] of [[t('agoYear'), shiftMonths(k, -12)], [t('agoMonth'), shiftMonths(k, -1)]]) {
       const m = day(key)?.moments.find(x => x.text);
       if (m) {
         return `
-          <button class="card memory" data-action="open-day" data-k="${key}">
+          <button class="memory" data-action="open-day" data-k="${key}">
             <span class="memory-label">${esc(t('memory'))} · ${esc(label)}</span>
             <span class="memory-text">${esc(trunc(m.text, 140))}</span>
           </button>`;
@@ -231,19 +239,19 @@
       ? `${esc(greeting())}${name ? `, <span class="accent-text">${esc(name)}</span>` : ''}`
       : esc(fmt(dateOf(k), { weekday: 'long' }));
     const picked = (ui.draft.mood ? 1 : 0) + ui.draft.tags.length;
-    return `
+    const l = `
       <header class="hero">
         <p class="eyebrow">${esc(fmt(dateOf(k), { weekday: 'long', day: 'numeric', month: 'long' }))}</p>
         <h1 class="title">${title}</h1>
         ${isToday ? `<p class="spark"><span class="spark-label">${esc(t('sparkLabel'))}</span><span>${esc(spark())}</span></p>` : ''}
       </header>
       ${dayNav(k)}
-      <section class="card composer" id="composer">
-        <textarea id="moment-text" class="lined" rows="3" placeholder="${esc(tq('placeholder'))}" aria-label="${esc(t('placeholder'))}">${esc(ui.draft.text)}</textarea>
+      <section class="composer" id="composer">
+        <textarea id="moment-text" class="lined" rows="4" placeholder="${esc(tq('placeholder'))}" aria-label="${esc(t('placeholder'))}">${esc(ui.draft.text)}</textarea>
         <div class="details ${ui.detailsOpen ? 'open' : ''}" id="details">
           <div class="details-inner">
             <span class="label">${esc(t('howFeel'))}</span>
-            <div class="mchips" data-group="draft">${moodChips('pick-mood', ui.draft.mood)}</div>
+            <div class="mchips">${moodChips('pick-mood', ui.draft.mood)}</div>
             <span class="label">${esc(t('topics'))}</span>
             <div class="tags">
               ${TAGS.map(tag => `<button class="chip ${ui.draft.tags.includes(tag) ? 'on' : ''}" data-action="toggle-tag" data-tag="${tag}" aria-pressed="${ui.draft.tags.includes(tag)}">${tagLabel(tag)}</button>`).join('')}
@@ -257,16 +265,45 @@
           <button class="btn primary sm" data-action="save-moment">${esc(t('save'))}</button>
         </div>
       </section>
-      ${memoryCard(k)}
-      <h2 class="section-title">${esc(t('momentsCount', moments.length))}</h2>
+      ${memoryCard(k)}`;
+    const r = `
+      ${heading(t('momentsCount', moments.length))}
       ${moments.length
         ? `<ol class="timeline">${moments.map(momentItem).join('')}</ol>`
-        : `<div class="empty"><div class="empty-orb">${ICONS.leaf}</div><p>${esc(isToday ? t('emptyDay') : t('emptyPast'))}</p></div>`}
-    `;
+        : `<div class="empty"><div class="empty-orb">${ICONS.leaf}</div><p>${esc(isToday ? t('emptyDay') : t('emptyPast'))}</p></div>`}`;
+    return { l, r };
   }
 
-  /* ---------- Ansicht: Buch ---------- */
-  function bookPage(k, idx, total) {
+  /* ---------- Bereich: Seiten (das Buch selbst) ---------- */
+  function tocPage(list) {
+    const days = list.slice(1);
+    if (!days.length) {
+      return `
+        <h2 class="toc-title">${esc(t('toc'))}</h2>
+        <div class="empty"><div class="empty-orb">${ICONS.leaf}</div><p>${esc(t('bookEmpty'))}</p></div>`;
+    }
+    let html = `<h2 class="toc-title">${esc(t('toc'))}</h2>`;
+    let month = '';
+    days.forEach((k, i) => {
+      const d = dateOf(k);
+      const mKey = k.slice(0, 7);
+      if (mKey !== month) {
+        if (month) html += '</ol>';
+        month = mKey;
+        html += `<h3 class="toc-month">${esc(fmt(d, { month: 'long', year: 'numeric' }))}</h3><ol class="toc-list">`;
+      }
+      const first = day(k).moments.slice().sort((a, b) => a.time - b.time).find(m => m.text)?.text || day(k).review?.word || '';
+      html += `
+        <li><button class="toc-item" data-action="goto-page" data-i="${i + 1}">
+          <span class="toc-day">${d.getDate()}</span>
+          <span class="toc-text">${esc(trunc(first, 60))}</span>
+          <span class="toc-no">${i + 1}</span>
+        </button></li>`;
+    });
+    return html + '</ol>';
+  }
+
+  function dayPage(k, no) {
     const d = day(k);
     const ms = [...d.moments].sort((a, b) => a.time - b.time);
     const r = d.review;
@@ -289,77 +326,39 @@
         </div>` : ''}
       <footer class="page-foot">
         <button class="link-btn" data-action="open-day" data-k="${k}">${esc(t('openDay'))} →</button>
-        <span class="page-no">${idx + 1}</span>
+        <span class="page-no">${no}</span>
       </footer>`;
   }
 
-  function renderBook() {
-    const pages = bookPages();
-    if (ui.bookIndex === null || ui.bookIndex >= pages.length) ui.bookIndex = pages.length - 1;
-    if (ui.bookIndex < 0) ui.bookIndex = 0;
-    const name = state.settings.name.trim();
-    if (!pages.length) {
-      return `
-        <header class="hero"><p class="eyebrow">Momente</p><h1 class="title">${esc(t('book'))}</h1></header>
-        <div class="book"><article class="book-page cover">
-          ${LOGO}
-          <p class="cover-title">${esc(name ? t('bookOf', name) : t('book'))}</p>
-          <p class="cover-sub">${esc(t('bookEmpty'))}</p>
-        </article></div>`;
+  function pageContent(list, i) {
+    if (i >= list.length) return `<div class="page-end"><span class="fleuron" aria-hidden="true">❦</span><p>${esc(t('toBeContinued'))}</p></div>`;
+    return list[i] === 'toc' ? tocPage(list) : dayPage(list[i], i);
+  }
+
+  function renderPages() {
+    const list = pageList();
+    if (ui.pageIndex === null || ui.pageIndex >= list.length) ui.pageIndex = list.length - 1;
+    if (ui.pageIndex < 0) ui.pageIndex = 0;
+    if (isWide()) {
+      const s = ui.pageIndex - (ui.pageIndex % 2);
+      return { l: pageContent(list, s), r: pageContent(list, s + 1) };
     }
-    const i = ui.bookIndex;
-    return `
-      <header class="hero">
-        <p class="eyebrow">Momente</p>
-        <h1 class="title">${esc(name ? t('bookOf', name) : t('book'))}</h1>
-      </header>
-      <div class="book" id="book">
-        <article class="book-page" id="book-page" aria-live="polite">${bookPage(pages[i], i, pages.length)}</article>
-      </div>
-      <div class="book-nav">
-        <button class="icon-btn" data-action="page-prev" aria-label="${esc(t('prevPage'))}" ${i <= 0 ? 'disabled' : ''}>‹</button>
-        <span class="book-count" id="book-count">${esc(t('page', i + 1, pages.length))}</span>
-        <button class="icon-btn" data-action="page-next" aria-label="${esc(t('nextPage'))}" ${i >= pages.length - 1 ? 'disabled' : ''}>›</button>
-      </div>`;
+    return { l: pageContent(list, ui.pageIndex), r: '' };
   }
 
-  let turning = false;
-  function turnPage(dir) {
-    const pages = bookPages();
-    const next = ui.bookIndex + dir;
-    if (turning || next < 0 || next >= pages.length) return;
-    const page = $('#book-page');
-    const swap = () => {
-      ui.bookIndex = next;
-      page.innerHTML = bookPage(pages[next], next, pages.length);
-      $('#book-count').textContent = t('page', next + 1, pages.length);
-      $('[data-action="page-prev"]').disabled = next <= 0;
-      $('[data-action="page-next"]').disabled = next >= pages.length - 1;
-    };
-    if (prefersReduced()) { swap(); return; }
-    turning = true;
-    page.classList.add(dir > 0 ? 'out-next' : 'out-prev');
-    setTimeout(() => {
-      swap();
-      page.classList.remove('out-next', 'out-prev');
-      page.classList.add(dir > 0 ? 'in-next' : 'in-prev');
-      setTimeout(() => { page.classList.remove('in-next', 'in-prev'); turning = false; }, 480);
-    }, 340);
+  function pageBounds() {
+    const list = pageList();
+    const step = isWide() ? 2 : 1;
+    const cur = isWide() ? ui.pageIndex - (ui.pageIndex % 2) : ui.pageIndex;
+    return { list, step, cur, canPrev: cur - step >= 0, canNext: cur + step < list.length };
   }
 
-  function bindSwipe() {
-    const book = $('#book'); if (!book) return;
-    let x0 = null, y0 = null;
-    book.addEventListener('touchstart', e => { x0 = e.touches[0].clientX; y0 = e.touches[0].clientY; }, { passive: true });
-    book.addEventListener('touchend', e => {
-      if (x0 === null) return;
-      const dx = e.changedTouches[0].clientX - x0, dy = e.changedTouches[0].clientY - y0;
-      if (Math.abs(dx) > 50 && Math.abs(dx) > Math.abs(dy) * 1.3) turnPage(dx < 0 ? 1 : -1);
-      x0 = null;
-    });
-  }
+  const corner = (dir, enabled) => `
+    <button class="corner corner-${dir}" data-action="page-${dir}" aria-label="${esc(t(dir === 'prev' ? 'prevPage' : 'nextPage'))}" ${enabled ? '' : 'hidden'}>
+      <span aria-hidden="true">${dir === 'prev' ? '‹' : '›'}</span>
+    </button>`;
 
-  /* ---------- Ansicht: Rückblick ---------- */
+  /* ---------- Bereich: Rückblick ---------- */
   function renderReview() {
     const k = ui.date;
     const d = day(k);
@@ -368,9 +367,9 @@
     const field = f => `
       <label class="field">
         <span class="field-label">${esc(tq(f))}</span>
-        <textarea rows="2" data-field="${f}" placeholder="${esc(t('fieldPlaceholder'))}">${esc(r[f] || '')}</textarea>
+        <textarea class="lined" rows="2" data-field="${f}" placeholder="${esc(t('fieldPlaceholder'))}">${esc(r[f] || '')}</textarea>
       </label>`;
-    return `
+    const l = `
       <header class="hero">
         <p class="eyebrow">${esc(fmt(dateOf(k), { weekday: 'long', day: 'numeric', month: 'long' }))}</p>
         <h1 class="title">${esc(t('reviewTitle'))}</h1>
@@ -378,39 +377,36 @@
       </header>
       ${dayNav(k)}
       ${moments.length ? `
-        <section class="card">
-          <h2 class="h2">${esc(t('todaysMoments'))}</h2>
-          <div class="strip">
-            ${moments.map(m => `
-              <div class="mini-moment" style="--c:var(--mood-${m.mood || 0})">
-                <small>${esc(fmtTime(m.time))}</small>
-                <p>${esc(trunc(m.text || t('mood' + m.mood), 80))}</p>
-              </div>`).join('')}
-          </div>
+        <section class="block">
+          ${heading(t('todaysMoments'))}
+          <ol class="page-lines compact">
+            ${moments.map(m => `<li><time>${esc(fmtTime(m.time))}</time><span class="pl-text">${m.mood ? `<i class="pl-mood" style="--c:var(--mood-${m.mood})"></i>` : ''}${esc(trunc(m.text || t('mood' + m.mood), 90))}</span></li>`).join('')}
+          </ol>
         </section>` : ''}
-      <section class="card">
-        <h2 class="h2">${esc(t('rating'))}</h2>
+      <section class="block">
+        ${heading(t('rating'))}
         <div class="stars" role="radiogroup" aria-label="${esc(t('rating'))}">
           ${[1, 2, 3, 4, 5].map(v => `<button class="star ${(r.rating || 0) >= v ? 'on' : ''}" data-action="rate" data-v="${v}" role="radio" aria-checked="${r.rating === v}" aria-label="${v}/5">★</button>`).join('')}
         </div>
-      </section>
-      <section class="card form">
+      </section>`;
+    const rr = `
+      <section class="block form">
         ${REVIEW_FIELDS.map(field).join('')}
         <label class="field">
           <span class="field-label">${esc(t('word'))}</span>
-          <input type="text" data-field="word" maxlength="40" placeholder="${esc(t('wordPlaceholder'))}" value="${esc(r.word || '')}">
+          <input type="text" class="lined-input" data-field="word" maxlength="40" placeholder="${esc(t('wordPlaceholder'))}" value="${esc(r.word || '')}">
         </label>
       </section>
       <button class="btn primary big" data-action="save-review">${esc(t('saveReview'))}</button>
-      ${r.savedAt ? `<p class="done-note">✓ ${esc(t('reviewDone'))} · ${esc(fmtTime(r.savedAt))}</p>` : ''}
-    `;
+      ${r.savedAt ? `<p class="done-note">✓ ${esc(t('reviewDone'))} · ${esc(fmtTime(r.savedAt))}</p>` : ''}`;
+    return { l, r: rr };
   }
 
-  /* ---------- Ansicht: Kalender ---------- */
+  /* ---------- Bereich: Kalender ---------- */
   function renderCalendar() {
     const m = ui.calMonth;
     const total = Object.values(state.days).reduce((a, d) => a + d.moments.length, 0);
-    const written = bookPages().length;
+    const written = writtenDays().length;
     const first = new Date(m.getFullYear(), m.getMonth(), 1);
     const daysIn = new Date(m.getFullYear(), m.getMonth() + 1, 0).getDate();
     const offset = (first.getDay() + 6) % 7; // Montag zuerst
@@ -429,7 +425,7 @@
         </button>`;
     }
     const now = new Date(); const atCurrent = m.getFullYear() === now.getFullYear() && m.getMonth() === now.getMonth();
-    return `
+    const l = `
       <header class="hero">
         <p class="eyebrow">${esc(t('calendar'))}</p>
         <h1 class="title">${esc(fmt(m, { month: 'long', year: 'numeric' }))}</h1>
@@ -439,7 +435,7 @@
         <div class="stat"><span class="stat-num" data-count="${total}">0</span><span class="stat-label">${esc(t('totalMoments'))}</span></div>
         <div class="stat"><span class="stat-num" data-count="${written}">0</span><span class="stat-label">${esc(t('daysWritten'))}</span></div>
       </section>
-      <section class="card cal">
+      <section class="block cal">
         <div class="cal-head">
           <button class="icon-btn" data-action="prev-month" aria-label="${esc(t('prevMonth'))}">‹</button>
           <strong>${esc(fmt(m, { month: 'long', year: 'numeric' }))}</strong>
@@ -454,12 +450,14 @@
             <small>${esc(t('mood5'))}</small>
           </span>
         </div>
-      </section>
-      <section class="card">
+      </section>`;
+    const r = `
+      <section class="block">
+        ${heading(t('searchTitle'))}
         <input type="search" id="search" class="search" placeholder="${esc(t('search'))}" aria-label="${esc(t('search'))}">
         <ul class="results" id="results"></ul>
-      </section>
-    `;
+      </section>`;
+    return { l, r };
   }
 
   function runSearch(q) {
@@ -491,7 +489,7 @@
       </button></li>`).join('');
   }
 
-  /* ---------- Ansicht: Einstellungen ---------- */
+  /* ---------- Bereich: Einstellungen ---------- */
   const langCards = (action, current) => LANGS.map(l => `
     <button class="lang ${current === l.code ? 'on' : ''}" data-action="${action}" data-lang="${l.code}" aria-pressed="${current === l.code}" lang="${l.code}">
       <span class="flag">${l.flag}</span>
@@ -501,34 +499,35 @@
 
   function renderSettings() {
     const s = state.settings;
-    return `
+    const l = `
       <header class="hero">
         <p class="eyebrow">Momente</p>
         <h1 class="title">${esc(t('settings'))}</h1>
       </header>
-      <section class="card">
-        <h2 class="h2">${esc(t('language'))}</h2>
+      <section class="block">
+        ${heading(t('language'))}
         <div class="langs">${langCards('set-lang', s.lang)}</div>
       </section>
-      <section class="card">
-        <h2 class="h2">${esc(t('appearance'))}</h2>
+      <section class="block">
+        ${heading(t('appearance'))}
         <div class="seg" role="radiogroup">
           ${['light', 'dark', 'auto'].map(th => `<button class="${s.theme === th ? 'on' : ''}" data-action="set-theme" data-theme="${th}" role="radio" aria-checked="${s.theme === th}">${esc(t('theme' + th[0].toUpperCase() + th.slice(1)))}</button>`).join('')}
         </div>
-      </section>
-      <section class="card">
-        <h2 class="h2">${esc(t('profile'))}</h2>
+      </section>`;
+    const r = `
+      <section class="block">
+        ${heading(t('profile'))}
         <label class="field">
           <span class="field-label">${esc(t('nameLabel'))}</span>
-          <input type="text" id="name-input" maxlength="30" value="${esc(s.name)}" autocomplete="given-name">
+          <input type="text" id="name-input" class="lined-input" maxlength="30" value="${esc(s.name)}" autocomplete="given-name">
         </label>
         <label class="switch-row">
           <span><strong>${esc(t('youngMode'))}</strong><small>${esc(t('youngDesc'))}</small></span>
           <input type="checkbox" class="switch" id="young-toggle" ${s.young ? 'checked' : ''}>
         </label>
       </section>
-      <section class="card">
-        <h2 class="h2">${esc(t('data'))}</h2>
+      <section class="block">
+        ${heading(t('data'))}
         <p class="muted">${esc(t('privacy'))}</p>
         <div class="btn-row">
           <button class="btn soft" data-action="export">${esc(t('export'))}</button>
@@ -538,64 +537,193 @@
         <button class="btn danger" data-action="wipe">${esc(t('wipe'))}</button>
       </section>
       <p class="muted center small">${esc(t('installTip'))}</p>
-      <p class="muted center small">Momente · v1.1</p>
-    `;
-  }
-
-  /* ---------- Onboarding ---------- */
-  function renderOnboarding() {
-    const el = $('#onboarding');
-    const nameVal = $('#onb-name')?.value ?? '';
-    el.innerHTML = `
-      <div class="onb" lang="${ui.onbLang}">
-        <div class="onb-card">
-          ${LOGO}
-          <h1 class="onb-title">Momente</h1>
-          <p class="onb-tagline">${esc(t('tagline'))}</p>
-          <p class="label">${esc(t('chooseLang'))}</p>
-          <div class="langs">${langCards('onb-lang', ui.onbLang)}</div>
-          <input id="onb-name" class="onb-input" type="text" maxlength="30" placeholder="${esc(t('yourName'))}" value="${esc(nameVal)}" autocomplete="given-name">
-          <button class="btn primary big" data-action="onb-start">${esc(t('start'))} →</button>
-        </div>
-      </div>`;
+      <p class="muted center small">Momente · v2.0</p>`;
+    return { l, r };
   }
 
   /* ---------- Rendering ---------- */
+  const RENDERERS = { today: renderToday, pages: renderPages, review: renderReview, calendar: renderCalendar, settings: renderSettings };
+
   function buildNav() {
-    $('#nav').innerHTML = `<span class="nav-ind" aria-hidden="true"></span>` +
-      VIEWS.map(v => `<button class="nav-btn" data-action="nav" data-v="${v}">${ICONS[v]}<span class="nav-label"></span></button>`).join('');
+    $('#nav').innerHTML = VIEWS.map((v, i) =>
+      `<button class="tab" data-action="nav" data-v="${v}" style="--tc:var(--tab-${i + 1})">${ICONS[v]}<span class="tab-label"></span></button>`).join('');
   }
   function updateNav() {
-    $('#nav').style.setProperty('--idx', VIEWS.indexOf(ui.view));
-    $$('.nav-btn').forEach(b => {
+    $$('.tab').forEach(b => {
       const on = b.dataset.v === ui.view;
       b.classList.toggle('on', on);
       on ? b.setAttribute('aria-current', 'page') : b.removeAttribute('aria-current');
-      $('.nav-label', b).textContent = t(b.dataset.v);
+      const label = t(b.dataset.v);
+      $('.tab-label', b).textContent = label;
+      b.title = label;
     });
   }
 
   function render({ anim = true } = {}) {
-    const html = { today: renderToday, book: renderBook, review: renderReview, calendar: renderCalendar, settings: renderSettings }[ui.view]();
-    $('#app').innerHTML = `<div class="view ${anim ? 'enter' : ''}">${html}</div>`;
+    const { l, r } = RENDERERS[ui.view]();
+    const name = state.settings.name.trim();
+    const pages = ui.view === 'pages';
+    const pb = pages ? pageBounds() : null;
+    const wide = isWide();
+    $('#app').innerHTML = `
+      <div class="spread view-${ui.view} ${anim ? 'enter' : ''} ${!wide && !r ? 'single' : ''}">
+        <section class="page page-l">
+          <header class="running"><span>Momente</span><span>${esc(name)}</span></header>
+          <div class="page-body">${l}</div>
+          ${pages ? corner('prev', pb.canPrev) : ''}
+          ${pages && !wide ? corner('next', pb.canNext) : ''}
+        </section>
+        <section class="page page-r">
+          <header class="running"><span>${esc(t(ui.view))}</span><span>${esc(fmt(new Date(), { day: 'numeric', month: 'long' }))}</span></header>
+          <div class="page-body">${r}</div>
+          ${pages && wide ? corner('next', pb.canNext) : ''}
+        </section>
+      </div>`;
+    postRender(anim);
+  }
+
+  function postRender(anim) {
     document.documentElement.lang = lang();
     document.title = `Momente · ${t(ui.view)}`;
     updateNav();
     ui.justAdded = null;
-    $$('textarea').forEach(autosize);
+    $$('#app textarea').forEach(autosize);
     if (ui.view === 'calendar') countUp(anim);
-    if (ui.view === 'book') bindSwipe();
+    if (ui.view === 'pages') bindSwipe();
     const edit = $('#edit-text');
-    if (edit) { edit.focus(); edit.setSelectionRange(edit.value.length, edit.value.length); }
-    if (anim) window.scrollTo({ top: 0, behavior: prefersReduced() ? 'auto' : 'smooth' });
+    if (edit) { edit.focus({ preventScroll: false }); edit.setSelectionRange(edit.value.length, edit.value.length); }
+  }
+
+  // Seite umblättern: das alte Blatt dreht sich um den Buchrücken, darunter liegt schon die neue Seite
+  let flipping = false;
+  function flip(dir, mutate) {
+    if (flipping) return;
+    const spread = $('.spread');
+    if (prefersReduced() || !spread || !dir) { mutate(); render({ anim: !spread }); return; }
+    flipping = true;
+    window.scrollTo({ top: 0, behavior: 'auto' });
+    const wide = isWide();
+    const oldL = $('.page-l').innerHTML, oldR = $('.page-r').innerHTML;
+    const oldSpread = spread.innerHTML;
+    const oldHeight = spread.offsetHeight;
+    mutate();
+    render({ anim: false });
+    const ns = $('.spread');
+    const leaf = document.createElement('div');
+    let land = () => {};
+    if (wide) {
+      if (dir > 0) {
+        const newL = $('.page-l').innerHTML;
+        $('.page-l').innerHTML = oldL;
+        leaf.className = 'leaf leaf-r turn-next';
+        leaf.innerHTML = `<div class="leaf-face front page page-r">${oldR}</div><div class="leaf-face back page page-l">${newL}</div>`;
+        land = () => { $('.page-l').innerHTML = newL; };
+      } else {
+        const newR = $('.page-r').innerHTML;
+        $('.page-r').innerHTML = oldR;
+        leaf.className = 'leaf leaf-l turn-prev';
+        leaf.innerHTML = `<div class="leaf-face front page page-l">${oldL}</div><div class="leaf-face back page page-r">${newR}</div>`;
+        land = () => { $('.page-r').innerHTML = newR; };
+      }
+    } else {
+      const h = Math.min(Math.max(oldHeight, ns.offsetHeight), window.innerHeight + 40);
+      if (dir > 0) {
+        leaf.className = 'leaf leaf-n turn-next';
+        leaf.innerHTML = `<div class="leaf-face front clone">${oldSpread}</div><div class="leaf-face back blank"></div>`;
+      } else {
+        const newHTML = ns.innerHTML;
+        ns.innerHTML = oldSpread;
+        leaf.className = 'leaf leaf-n turn-prev-in';
+        leaf.innerHTML = `<div class="leaf-face front clone">${newHTML}</div><div class="leaf-face back blank"></div>`;
+        land = () => { ns.innerHTML = newHTML; };
+      }
+      leaf.style.height = h + 'px';
+    }
+    leaf.setAttribute('aria-hidden', 'true');
+    ns.appendChild(leaf);
+    let done = false;
+    const finish = () => {
+      if (done) return; done = true;
+      land();
+      leaf.remove();
+      flipping = false;
+      postRender(false);
+    };
+    leaf.addEventListener('animationend', finish, { once: true });
+    setTimeout(finish, 1200);
   }
 
   function go(view) {
     if (view === ui.view) return;
-    ui.view = view;
-    ui.editing = null;
-    if (view === 'book') ui.bookIndex = null;
-    render();
+    const dir = Math.sign(VIEWS.indexOf(view) - VIEWS.indexOf(ui.view));
+    flip(dir, () => {
+      ui.view = view;
+      ui.editing = null;
+      if (view === 'pages') ui.pageIndex = null;
+    });
+  }
+
+  function turnPage(dir) {
+    const b = pageBounds();
+    if (dir > 0 && !b.canNext) return;
+    if (dir < 0 && !b.canPrev) return;
+    flip(dir, () => { ui.pageIndex = b.cur + dir * b.step; });
+  }
+
+  function bindSwipe() {
+    const sp = $('.spread'); if (!sp || sp.dataset.swipe) return;
+    sp.dataset.swipe = '1';
+    let x0 = null, y0 = null;
+    sp.addEventListener('touchstart', e => { x0 = e.touches[0].clientX; y0 = e.touches[0].clientY; }, { passive: true });
+    sp.addEventListener('touchend', e => {
+      if (x0 === null || ui.view !== 'pages') return;
+      const dx = e.changedTouches[0].clientX - x0, dy = e.changedTouches[0].clientY - y0;
+      if (Math.abs(dx) > 50 && Math.abs(dx) > Math.abs(dy) * 1.3) turnPage(dx < 0 ? 1 : -1);
+      x0 = null;
+    });
+  }
+
+  /* ---------- Einband (Cover) ---------- */
+  function renderCover(first) {
+    const el = $('#cover');
+    const nameVal = $('#onb-name')?.value ?? '';
+    const name = state.settings.name.trim();
+    el.innerHTML = `
+      <div class="cover-scene" lang="${lang()}">
+        <div class="cover ${first ? 'first' : ''}" ${first ? 'role="dialog" aria-modal="true" aria-label="Momente"' : 'data-action="open-book" role="button" tabindex="0" aria-label="' + esc(t('tapToOpen')) + '"'}>
+          <div class="cover-inner">
+            ${COVER_LOGO}
+            <h1 class="cover-title">Momente</h1>
+            <p class="cover-tagline">${esc(t('tagline'))}</p>
+            ${first ? `
+              <div class="cover-form">
+                <p class="cover-label">${esc(t('chooseLang'))}</p>
+                <div class="langs">${langCards('onb-lang', ui.onbLang)}</div>
+                <input id="onb-name" class="cover-input" type="text" maxlength="30" placeholder="${esc(t('yourName'))}" value="${esc(nameVal)}" autocomplete="given-name">
+                <button class="btn cover-btn" data-action="onb-start">${esc(t('start'))} →</button>
+              </div>` : `
+              <div class="cover-foot">
+                ${name ? `<p class="cover-name">${esc(name)}</p>` : ''}
+                <p class="cover-year">${new Date().getFullYear()}</p>
+                <p class="cover-hint">${esc(t('tapToOpen'))}</p>
+              </div>`}
+          </div>
+        </div>
+      </div>`;
+    if (!first) {
+      clearTimeout(ui.coverTimer);
+      ui.coverTimer = setTimeout(openBook, 1600);
+    }
+  }
+
+  function openBook() {
+    clearTimeout(ui.coverTimer);
+    const el = $('#cover');
+    if (!$('.cover', el)) return;
+    session.set('momente.opened', '1');
+    if (prefersReduced()) { el.innerHTML = ''; return; }
+    el.classList.add('opening');
+    setTimeout(() => { el.innerHTML = ''; el.classList.remove('opening'); }, 1250);
   }
 
   /* ---------- Effekte ---------- */
@@ -694,7 +822,7 @@
     if (th === 'auto') delete document.documentElement.dataset.theme;
     else document.documentElement.dataset.theme = th;
     const dark = th === 'dark' || (th === 'auto' && window.matchMedia('(prefers-color-scheme: dark)').matches);
-    $('meta[name="theme-color"]')?.setAttribute('content', dark ? '#121a15' : '#f4f8f2');
+    $('meta[name="theme-color"]')?.setAttribute('content', dark ? '#121a15' : '#eef4ea');
   }
 
   /* ---------- Aktionen ---------- */
@@ -718,10 +846,18 @@
 
   const actions = {
     nav: el => go(el.dataset.v),
-    'prev-day': () => { ui.date = addDays(ui.date, -1); ui.editing = null; render(); },
-    'next-day': () => { if (ui.date < todayKey()) { ui.date = addDays(ui.date, 1); ui.editing = null; render(); } },
-    'go-today': () => { ui.date = todayKey(); ui.editing = null; render(); },
-    'open-day': el => { ui.date = el.dataset.k; ui.view = 'today'; ui.editing = null; render(); },
+    'prev-day': () => flip(-1, () => { ui.date = addDays(ui.date, -1); ui.editing = null; }),
+    'next-day': () => { if (ui.date < todayKey()) flip(1, () => { ui.date = addDays(ui.date, 1); ui.editing = null; }); },
+    'go-today': () => flip(1, () => { ui.date = todayKey(); ui.editing = null; }),
+    'open-day': el => {
+      const k = el.dataset.k;
+      const dir = ui.view === 'today' ? (k < ui.date ? -1 : 1) : -1;
+      flip(dir, () => { ui.date = k; ui.view = 'today'; ui.editing = null; });
+    },
+    'goto-page': el => flip(1, () => { ui.pageIndex = Number(el.dataset.i); }),
+    'page-prev': () => turnPage(-1),
+    'page-next': () => turnPage(1),
+    'open-book': () => openBook(),
 
     'toggle-details': el => {
       ui.detailsOpen = !ui.detailsOpen;
@@ -796,9 +932,6 @@
       if (li && !prefersReduced()) { li.classList.add('leaving'); setTimeout(finish, 380); } else finish();
     },
 
-    'page-prev': () => turnPage(-1),
-    'page-next': () => turnPage(1),
-
     rate: el => {
       const v = Number(el.dataset.v);
       const d = ensureDay(ui.date);
@@ -825,7 +958,7 @@
     'prev-month': () => { ui.calMonth = new Date(ui.calMonth.getFullYear(), ui.calMonth.getMonth() - 1, 1); render({ anim: false }); animateGrid(); },
     'next-month': () => { ui.calMonth = new Date(ui.calMonth.getFullYear(), ui.calMonth.getMonth() + 1, 1); render({ anim: false }); animateGrid(); },
 
-    'set-lang': el => { state.settings.lang = el.dataset.lang; persist(); render(); },
+    'set-lang': el => { state.settings.lang = el.dataset.lang; persist(); render({ anim: false }); },
     'set-theme': el => {
       state.settings.theme = el.dataset.theme;
       persist();
@@ -856,15 +989,13 @@
       render({ anim: false });
     },
 
-    'onb-lang': el => { ui.onbLang = el.dataset.lang; renderOnboarding(); document.documentElement.lang = ui.onbLang; },
+    'onb-lang': el => { ui.onbLang = el.dataset.lang; renderCover(true); render({ anim: false }); },
     'onb-start': () => {
       state.settings.lang = ui.onbLang;
       state.settings.name = ($('#onb-name')?.value || '').trim();
       persist();
-      const onb = $('.onb');
       render();
-      if (onb && !prefersReduced()) { onb.classList.add('closing'); setTimeout(() => { $('#onboarding').innerHTML = ''; }, 600); }
-      else $('#onboarding').innerHTML = '';
+      openBook();
     }
   };
 
@@ -931,7 +1062,8 @@
     if (e.target.id === 'moment-text' && mod) { e.preventDefault(); actions['save-moment']($('[data-action="save-moment"]')); }
     else if (e.target.id === 'edit-text' && mod) { e.preventDefault(); actions['save-edit']($('[data-action="save-edit"]')); }
     else if (e.target.id === 'edit-text' && e.key === 'Escape') actions['cancel-edit']();
-    else if (ui.view === 'book' && !/INPUT|TEXTAREA/.test(e.target.tagName) && !$('.modal')) {
+    else if (e.target.classList?.contains('cover') && (e.key === 'Enter' || e.key === ' ')) { e.preventDefault(); openBook(); }
+    else if (ui.view === 'pages' && !/INPUT|TEXTAREA/.test(e.target.tagName) && !$('.modal') && !$('#cover .cover')) {
       if (e.key === 'ArrowRight') turnPage(1);
       if (e.key === 'ArrowLeft') turnPage(-1);
     }
@@ -949,12 +1081,14 @@
   });
 
   window.matchMedia('(prefers-color-scheme: dark)').addEventListener?.('change', applyTheme);
+  wideMQ.addEventListener?.('change', () => render({ anim: false }));
 
   /* ---------- Start ---------- */
   applyTheme();
   buildNav();
   render();
-  if (!state.settings.lang) renderOnboarding();
+  const firstRun = !state.settings.lang;
+  if (firstRun || (!session.get('momente.opened') && !prefersReduced())) renderCover(firstRun);
 
   if ('serviceWorker' in navigator && /^https?:$/.test(location.protocol) && window.self === window.top) {
     window.addEventListener('load', () => navigator.serviceWorker.register('sw.js').catch(() => {}));
