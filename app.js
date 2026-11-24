@@ -117,6 +117,10 @@
     emojiPanel: null,
     todaySub: 'plan',
     moveMenu: null,
+    editHour: null,
+    doneOpen: true,
+    prioMenu: null,
+    newPrio: 0,
     openMoments: new Set(),
     detailsOpen: false,
     editing: null,
@@ -420,54 +424,79 @@
     return { start: a, end: b };
   }
 
+  // Eigene Uhrzeit je Zeile: d.planTimes = { '09': '09:30' }
+  const toMin = v => { const [h, m] = v.split(':').map(Number); return h * 60 + (m || 0); };
+  const effTime = (d, hh) => (d?.planTimes || {})[hh] || `${hh}:00`;
+
   function scheduleBlock(k) {
     const d = day(k);
     const plan = d?.plan || {};
     const { start, end } = planHours();
     const now = new Date();
+    const nowMin = now.getHours() * 60 + now.getMinutes();
     const isToday = k === todayKey();
-    const byHour = {};
-    (d?.moments || []).forEach(m => { const h = new Date(m.time).getHours(); (byHour[h] ||= []).push(m); });
-    let rows = '';
-    for (let h = start; h <= end; h++) {
-      const hh = pad(h);
-      const cur = isToday && now.getHours() === h;
-      const past = isToday && h < now.getHours();
-      const ms = (byHour[h] || []).sort((a, b) => a.time - b.time);
-      rows += `
-        <div class="hrow ${cur ? 'now' : ''} ${past ? 'past' : ''}" ${cur ? `style="--f:${(now.getMinutes() / 60).toFixed(3)}"` : ''}>
-          <span class="htime">${hh}:00${cur ? `<small>${esc(t('nowLabel'))}</small>` : ''}</span>
+    const rows = [];
+    for (let h = start; h <= end; h++) { const hh = pad(h); rows.push({ hh, time: effTime(d, hh) }); }
+    rows.sort((a, b) => toMin(a.time) - toMin(b.time));
+    const curIdx = isToday ? rows.reduce((acc, r, i) => (toMin(r.time) <= nowMin ? i : acc), -1) : -1;
+    const ms = (d?.moments || []).slice().sort((a, b) => a.time - b.time);
+    let html = '';
+    rows.forEach((r, i) => {
+      const from = toMin(r.time), to = i + 1 < rows.length ? toMin(rows[i + 1].time) : from + 60;
+      const inRow = ms.filter(m => { const mm = new Date(m.time).getHours() * 60 + new Date(m.time).getMinutes(); return mm >= from && mm < to; });
+      const cur = i === curIdx && nowMin < to;
+      const past = isToday && to <= nowMin;
+      const custom = !!(d?.planTimes || {})[r.hh];
+      const frac = cur ? Math.min(1, (nowMin - from) / Math.max(1, to - from)) : 0;
+      html += `
+        <div class="hrow ${cur ? 'now' : ''} ${past ? 'past' : ''} ${custom ? 'custom' : ''}" ${cur ? `style="--f:${frac.toFixed(3)}"` : ''}>
+          ${ui.editHour === r.hh ? `
+            <span class="htime editing">
+              <input class="htime-input" type="time" step="300" data-hour="${r.hh}" value="${r.time}" aria-label="${esc(t('timeChange'))}">
+              ${custom ? `<button class="htime-reset" data-action="reset-hour" data-hour="${r.hh}" aria-label="${esc(t('timeReset'))}" title="${esc(t('timeReset'))}">↺</button>` : ''}
+            </span>` : `
+            <button class="htime" data-action="edit-hour" data-hour="${r.hh}" aria-label="${esc(t('timeChange'))}: ${r.time}" title="${esc(t('timeChange'))}">${r.time}${cur ? `<small>${esc(t('nowLabel'))}</small>` : ''}</button>`}
           <div class="hbody">
-            <input class="hinput" type="text" maxlength="120" data-hour="${hh}" value="${esc(plan[hh] || '')}" aria-label="${hh}:00">
-            ${ms.length ? `<span class="hmoments">${ms.map(m => `<button class="hm" data-action="goto-moment" data-id="${m.id}">${esc(feelEmoji(m) || '•')} ${esc(trunc(momentLabel(m), 22))}</button>`).join('')}</span>` : ''}
+            <input class="hinput" type="text" maxlength="120" data-hour="${r.hh}" value="${esc(plan[r.hh] || '')}" aria-label="${r.time}">
+            ${inRow.length ? `<span class="hmoments">${inRow.map(m => `<button class="hm" data-action="goto-moment" data-id="${m.id}">${esc(feelEmoji(m) || '•')} ${esc(trunc(momentLabel(m), 22))}</button>`).join('')}</span>` : ''}
           </div>
         </div>`;
-    }
+    });
     return `
       <section class="block schedule">
         ${heading(t('schedule'))}
         <p class="hint">${esc(t('planHint'))}</p>
-        <div class="hours">${rows}</div>
+        <div class="hours">${html}</div>
       </section>`;
   }
 
-  const todoBullet = x => x.state === 'done' ? '×' : x.state === 'moved' ? '>' : '•';
-  // Priorität: 1 sehr wichtig, 2 wichtig, 3 normal (alte Einträge: ✱ → 1, sonst 2)
-  const boxOf = x => [1, 2, 3].includes(x.box) ? x.box : (x.prio ? 1 : 2);
+  const todoBullet = x => x.state === 'done' ? '☑' : x.state === 'doing' ? '↻' : x.state === 'moved' ? '>' : '☐';
+  // Priorität je Aufgabe (vom Nutzer gewählt): 1 sehr wichtig, 2 wichtig, 3 normal, 0 keine
+  const prioOf = x => [0, 1, 2, 3].includes(x.p) ? x.p : ([1, 2, 3].includes(x.box) ? x.box : (x.prio ? 1 : 0));
+  const prioRank = x => prioOf(x) || 4;
+  const STATUS = ['open', 'doing', 'done'];
 
   function todoItem(x) {
-    const b = boxOf(x);
+    const pr = prioOf(x);
+    const live = x.state === 'open' || x.state === 'doing';
     return `
-      <li class="todo ${x.state}" data-id="${x.id}">
-        <button class="tb" data-action="todo-toggle" data-id="${x.id}" aria-label="${esc(x.text)}" aria-pressed="${x.state === 'done'}" ${x.state === 'moved' ? 'disabled' : ''}>${todoBullet(x)}</button>
+      <li class="todo st-${x.state}" data-id="${x.id}">
+        ${x.state === 'moved'
+          ? '<span class="tb static" aria-hidden="true">&gt;</span>'
+          : `<button class="tcheck ${x.state === 'done' ? 'on' : ''} ${x.state === 'doing' ? 'half' : ''}" data-action="todo-toggle" data-id="${x.id}" role="checkbox" aria-checked="${x.state === 'done' ? 'true' : x.state === 'doing' ? 'mixed' : 'false'}" aria-label="${esc(x.text)}"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 12.5l4.2 4.2L19 7"/></svg></button>`}
         <input class="tinput" type="text" maxlength="160" data-id="${x.id}" value="${esc(x.text)}" ${x.state === 'moved' ? 'readonly' : ''} aria-label="${esc(t('todos'))}">
-        ${x.from && x.state !== 'moved' ? `<span class="from-tag" title="${esc(fmt(dateOf(x.from), { day: 'numeric', month: 'long' }))}">↪ ${esc(fmt(dateOf(x.from), { day: 'numeric', month: 'short' }))}</span>` : ''}
+        ${x.from && live ? `<span class="from-tag" title="${esc(fmt(dateOf(x.from), { day: 'numeric', month: 'long' }))}">↪ ${esc(fmt(dateOf(x.from), { day: 'numeric', month: 'short' }))}</span>` : ''}
+        <button class="pchip p${pr}" data-action="todo-prio-menu" data-id="${x.id}" aria-label="${esc(t('prioLabel'))}" title="${esc(t('prioLabel'))}" ${x.state === 'moved' ? 'disabled' : ''}><i></i>${pr ? esc(t('prio' + pr)) : '＋'}</button>
         <span class="tactions">
-          ${b > 1 && x.state !== 'moved' ? `<button class="icon-btn small ghost" data-action="todo-box" data-dir="-1" data-id="${x.id}" aria-label="${esc(t('prioUp'))}" title="${esc(t('prioUp'))}">↑</button>` : ''}
-          ${b < 3 && x.state !== 'moved' ? `<button class="icon-btn small ghost" data-action="todo-box" data-dir="1" data-id="${x.id}" aria-label="${esc(t('prioDown'))}" title="${esc(t('prioDown'))}">↓</button>` : ''}
-          ${x.state === 'open' ? `<button class="icon-btn small ghost" data-action="todo-move" data-id="${x.id}" aria-label="${esc(t('moveTomorrow'))}" title="${esc(t('moveTomorrow'))}">&gt;</button>` : ''}
+          ${x.state === 'open' ? `<button class="icon-btn small ghost" data-action="todo-status" data-dir="1" data-id="${x.id}" aria-label="${esc(t('startTask'))}" title="${esc(t('startTask'))}">▶</button>` : ''}
+          ${x.state === 'doing' ? `<button class="icon-btn small ghost" data-action="todo-status" data-dir="-1" data-id="${x.id}" aria-label="${esc(t('backTask'))}" title="${esc(t('backTask'))}">↩</button>` : ''}
+          ${live ? `<button class="icon-btn small ghost" data-action="todo-move" data-id="${x.id}" aria-label="${esc(t('moveTomorrow'))}" title="${esc(t('moveTomorrow'))}">&gt;</button>` : ''}
           <button class="icon-btn small ghost" data-action="todo-delete" data-id="${x.id}" aria-label="${esc(t('delete'))}" title="${esc(t('delete'))}">${ICONS.trash}</button>
         </span>
+        ${ui.prioMenu === x.id ? `
+          <div class="prio-menu" role="menu">
+            ${[1, 2, 3, 0].map(v => `<button class="popt p${v} ${pr === v ? 'on' : ''}" role="menuitemradio" aria-checked="${pr === v}" data-action="todo-set-prio" data-id="${x.id}" data-p="${v}"><i></i>${esc(v ? t('prio' + v) : t('prioNone'))}</button>`).join('')}
+          </div>` : ''}
         ${x.state === 'moved' && x.movedTo ? `<span class="moved-to">→ ${esc(fmt(dateOf(x.movedTo), { day: 'numeric', month: 'short' }))}</span>` : ''}
         ${ui.moveMenu === x.id ? `
           <div class="move-menu">
@@ -478,22 +507,34 @@
       </li>`;
   }
 
-  function todoBox(b, list) {
-    const act = list.filter(x => x.state !== 'moved');
-    const dn = act.filter(x => x.state === 'done').length;
+  function statusBox(st, list) {
+    const icon = { open: '☐', doing: '↻', done: '☑' }[st];
+    const key = { open: 'stOpen', doing: 'stDoing', done: 'stDone' }[st];
+    const collapsible = st === 'done';
+    const open = !collapsible || ui.doneOpen;
+    const items = list.slice().sort((a, b) => (a.state === 'moved') - (b.state === 'moved') || prioRank(a) - prioRank(b));
+    const head = `
+          <span class="tbox-num" aria-hidden="true">${icon}</span>
+          <span class="tbox-title"><b>${esc(t(key))}</b><small>${esc(t(key + 'Hint'))}</small></span>
+          <em class="tbox-count">${list.filter(x => x.state !== 'moved').length}</em>
+          ${collapsible ? '<span class="chev" aria-hidden="true">⌄</span>' : ''}`;
     return `
-      <div class="tbox p${b}" data-box="${b}">
-        <div class="tbox-head">
-          <span class="tbox-num">${b}</span>
-          <span class="tbox-title"><b>${esc(t('prio' + b))}</b><small>${esc(t('prioHint' + b))}</small></span>
-          ${act.length ? `<em class="tbox-count">${dn}/${act.length}</em>` : ''}
-        </div>
-        ${list.length ? `<ul class="todos">${list.map(todoItem).join('')}</ul>` : ''}
-        <div class="todo-add">
-          <span class="tb static" aria-hidden="true">•</span>
-          <input class="todo-input" id="todo-input-${b}" data-box="${b}" type="text" maxlength="160" placeholder="${esc(t('todoPh'))}" aria-label="${esc(t('prio' + b))}: ${esc(t('todoPh'))}">
-          <button class="icon-btn small tadd" data-action="add-todo" data-box="${b}" aria-label="${esc(t('addTask'))}" title="${esc(t('addTask'))}">+</button>
-        </div>
+      <div class="tbox s-${st} ${open ? 'open' : ''}" data-status="${st}">
+        ${collapsible
+          ? `<button class="tbox-head as-btn" data-action="toggle-done" aria-expanded="${open}">${head}</button>`
+          : `<div class="tbox-head">${head}</div>`}
+        <div class="details ${open ? 'open' : ''}"><div class="details-inner">
+          ${items.length ? `<ul class="todos">${items.map(todoItem).join('')}</ul>` : (st === 'done' ? `<p class="hint tdone-empty">${esc(t('doneEmpty'))}</p>` : '')}
+          ${st === 'open' ? `
+            <div class="todo-add">
+              <span class="tb static" aria-hidden="true">☐</span>
+              <input class="todo-input" id="todo-input-1" data-box="1" type="text" maxlength="160" placeholder="${esc(t('todoPh'))}" aria-label="${esc(t('todoPh'))}">
+              <span class="newprio" role="radiogroup" aria-label="${esc(t('prioLabel'))}">
+                ${[1, 2, 3].map(v => `<button class="npdot p${v} ${ui.newPrio === v ? 'on' : ''}" data-action="set-new-prio" data-p="${v}" role="radio" aria-checked="${ui.newPrio === v}" aria-label="${esc(t('prio' + v))}" title="${esc(t('prio' + v))}"></button>`).join('')}
+              </span>
+              <button class="icon-btn small tadd" data-action="add-todo" data-box="1" aria-label="${esc(t('addTask'))}" title="${esc(t('addTask'))}">+</button>
+            </div>` : ''}
+        </div></div>
       </div>`;
   }
 
@@ -501,12 +542,16 @@
     const todos = day(k)?.todos || [];
     const active = todos.filter(x => x.state !== 'moved');
     const done = active.filter(x => x.state === 'done').length;
-    const yOpen = (day(addDays(k, -1))?.todos || []).filter(x => x.state === 'open');
+    const yOpen = (day(addDays(k, -1))?.todos || []).filter(x => x.state === 'open' || x.state === 'doing');
     return `
       <section class="block todos-block">
         <h2 class="h2"><span>${esc(t('todos'))}</span>${active.length ? `<em class="h2-count">${done}/${active.length}</em>` : ''}</h2>
         ${yOpen.length ? `<button class="carry" data-action="carry-over">↪ ${esc(t('carryOver', yOpen.length))}</button>` : ''}
-        <div class="tboxes">${[1, 2, 3].map(b => todoBox(b, todos.filter(x => boxOf(x) === b))).join('')}</div>
+        <div class="tboxes">
+          ${statusBox('open', todos.filter(x => x.state === 'open' || x.state === 'moved'))}
+          ${statusBox('doing', todos.filter(x => x.state === 'doing'))}
+          ${statusBox('done', todos.filter(x => x.state === 'done'))}
+        </div>
         ${active.length ? `<div class="progress" aria-label="${esc(t('todoDone', done, active.length))}"><i style="width:${Math.round(done / active.length * 100)}%"></i></div><p class="hint">${esc(t('todoDone', done, active.length))}</p>` : ''}
         <p class="bullet-key">${esc(t('bulletKey'))}</p>
       </section>`;
@@ -688,10 +733,10 @@
         ${ms.length ? momentList(ms, true) : ''}
         ${(d.todos || []).length ? `
           <h3 class="page-sub">${esc(t('todos'))}</h3>
-          <ul class="todos ro">${d.todos.slice().sort((a, b) => boxOf(a) - boxOf(b)).map(x => `<li class="todo ${x.state} pm${boxOf(x)}" title="${esc(t('prio' + boxOf(x)))}"><span class="tb static">${todoBullet(x)}</span><span class="ttext">${esc(x.text)}</span></li>`).join('')}</ul>` : ''}
+          <ul class="todos ro">${d.todos.slice().sort((a, b) => STATUS.indexOf(a.state) - STATUS.indexOf(b.state) || prioRank(a) - prioRank(b)).map(x => `<li class="todo st-${x.state} ${x.state === 'done' ? 'done' : ''} pm${prioOf(x)}" title="${esc(prioOf(x) ? t('prio' + prioOf(x)) : '')}"><span class="tb static">${x.state === 'moved' ? '&gt;' : todoBullet(x)}</span><span class="ttext">${esc(x.text)}</span></li>`).join('')}</ul>` : ''}
         ${Object.keys(d.plan || {}).filter(h => (d.plan[h] || '').trim()).length ? `
           <h3 class="page-sub">${esc(t('schedule'))}</h3>
-          <ul class="plan-ro">${Object.keys(d.plan).sort().filter(h => (d.plan[h] || '').trim()).map(h => `<li><time>${h}:00</time><span>${esc(d.plan[h])}</span></li>`).join('')}</ul>` : ''}
+          <ul class="plan-ro">${Object.keys(d.plan).filter(h => (d.plan[h] || '').trim()).sort((a, b) => toMin(effTime(d, a)) - toMin(effTime(d, b))).map(h => `<li><time>${effTime(d, h)}</time><span>${esc(d.plan[h])}</span></li>`).join('')}</ul>` : ''}
         ${notes.length ? `
           <div class="page-review">
             <h3>${esc(t('review'))}</h3>
@@ -788,7 +833,7 @@
       if ((d.title || '').toLocaleLowerCase().includes(q)) hits.push({ k, text: d.title, mood: dayMood(k) });
       for (const m of d.moments) { const tx = [m.title, m.text, m.feelNote, ...(m.feelWords || [])].filter(Boolean).join(' — '); if (tx.toLocaleLowerCase().includes(q)) hits.push({ k, text: tx, mood: m.mood }); }
       for (const x of d.todos || []) if ((x.text || '').toLocaleLowerCase().includes(q)) hits.push({ k, text: todoBullet(x) + ' ' + x.text, mood: 0 });
-      for (const [h, v] of Object.entries(d.plan || {})) if ((v || '').toLocaleLowerCase().includes(q)) hits.push({ k, text: `${h}:00 ${v}`, mood: 0 });
+      for (const [h, v] of Object.entries(d.plan || {})) if ((v || '').toLocaleLowerCase().includes(q)) hits.push({ k, text: `${effTime(d, h)} ${v}`, mood: 0 });
       if (d.review) for (const f of REVIEW_FIELDS) {
         const v = d.review[f] || '';
         if (v.toLocaleLowerCase().includes(q)) hits.push({ k, text: v, mood: 0 });
@@ -1320,29 +1365,70 @@
       flip(-1, () => { ui.todaySub = 'moments'; });
     },
     'add-todo': el => {
-      const b = Number(el?.dataset?.box) || 2;
+      const b = 1;
       const inp = $(`#todo-input-${b}`);
       const text = (inp?.value || '').trim();
       if (!text) { inp?.focus(); return; }
-      (ensureDay(ui.date).todos ||= []).push({ id: uid(), text, state: 'open', box: b });
+      (ensureDay(ui.date).todos ||= []).push({ id: uid(), text, state: 'open', p: ui.newPrio || 0 });
       persist();
       render({ anim: false });
       $(`#todo-input-${b}`)?.focus();
     },
-    'todo-box': el => {
+    'todo-status': el => {
+      const x = (day(ui.date)?.todos || []).find(y => y.id === el.dataset.id);
+      if (!x || x.state === 'moved') return;
+      const i = STATUS.indexOf(x.state);
+      x.state = STATUS[Math.min(2, Math.max(0, i + Number(el.dataset.dir)))];
+      persist();
+      const li = el.closest('.todo');
+      if (li && !prefersReduced()) { li.classList.add('checking'); setTimeout(() => render({ anim: false }), 380); } else render({ anim: false });
+    },
+    'todo-prio-menu': el => { ui.prioMenu = ui.prioMenu === el.dataset.id ? null : el.dataset.id; ui.moveMenu = null; render({ anim: false }); },
+    'todo-set-prio': el => {
       const x = (day(ui.date)?.todos || []).find(y => y.id === el.dataset.id);
       if (!x) return;
-      x.box = Math.min(3, Math.max(1, boxOf(x) + Number(el.dataset.dir)));
-      delete x.prio;
+      x.p = Number(el.dataset.p);
+      delete x.box; delete x.prio;
+      ui.prioMenu = null;
       persist();
       render({ anim: false });
+    },
+    'set-new-prio': el => {
+      const v = Number(el.dataset.p);
+      ui.newPrio = ui.newPrio === v ? 0 : v;
+      $$('.npdot').forEach(b => { const on = Number(b.dataset.p) === ui.newPrio; b.classList.toggle('on', on); b.setAttribute('aria-checked', on); });
+      $('#todo-input-1')?.focus();
     },
     'todo-toggle': el => {
       const x = (day(ui.date)?.todos || []).find(y => y.id === el.dataset.id);
       if (!x || x.state === 'moved') return;
       x.state = x.state === 'done' ? 'open' : 'done';
       persist();
+      el.classList.toggle('on', x.state === 'done');
+      el.classList.remove('half');
+      const li = el.closest('.todo');
       if (x.state === 'done') burst(el);
+      if (li && !prefersReduced()) { li.classList.add(x.state === 'done' ? 'checking' : 'unchecking'); setTimeout(() => render({ anim: false }), 420); }
+      else render({ anim: false });
+    },
+    'toggle-done': el => {
+      ui.doneOpen = !ui.doneOpen;
+      const box = el.closest('.tbox, .tdone');
+      box.classList.toggle('open', ui.doneOpen);
+      $('.details', box).classList.toggle('open', ui.doneOpen);
+      el.setAttribute('aria-expanded', ui.doneOpen);
+    },
+    'edit-hour': el => {
+      ui.editHour = el.dataset.hour;
+      render({ anim: false });
+      const inp = $(`.htime-input[data-hour="${el.dataset.hour}"]`);
+      inp?.focus();
+      try { inp?.showPicker?.(); } catch (e) { /* nicht überall verfügbar */ }
+    },
+    'reset-hour': el => {
+      const d = day(ui.date);
+      if (d?.planTimes) { delete d.planTimes[el.dataset.hour]; persist(); }
+      ui.editHour = null;
       render({ anim: false });
     },
     'todo-prio': el => {
@@ -1353,12 +1439,13 @@
       render({ anim: false });
     },
     'todo-move': el => {
+      ui.prioMenu = null;
       ui.moveMenu = ui.moveMenu === el.dataset.id ? null : el.dataset.id;
       render({ anim: false });
     },
     'todo-move-to': el => {
       const x = (day(ui.date)?.todos || []).find(y => y.id === el.dataset.id);
-      if (!x || x.state !== 'open') return;
+      if (!x || !(x.state === 'open' || x.state === 'doing')) return;
       let target = addDays(ui.date, 1);
       if (el.dataset.when === 'date') {
         const v = $(`#move-date-${x.id}`)?.value || '';
@@ -1367,7 +1454,7 @@
       }
       x.state = 'moved';
       x.movedTo = target;
-      (ensureDay(target).todos ||= []).push({ id: uid(), text: x.text, state: 'open', box: boxOf(x), from: ui.date });
+      (ensureDay(target).todos ||= []).push({ id: uid(), text: x.text, state: 'open', p: prioOf(x), from: ui.date });
       ui.moveMenu = null;
       persist();
       toast(t('movedToDate', fmt(dateOf(target), { day: 'numeric', month: 'long' })));
@@ -1383,9 +1470,9 @@
     },
     'carry-over': () => {
       const y = day(addDays(ui.date, -1));
-      const open = (y?.todos || []).filter(x => x.state === 'open');
+      const open = (y?.todos || []).filter(x => x.state === 'open' || x.state === 'doing');
       const list = (ensureDay(ui.date).todos ||= []);
-      open.forEach(x => { x.state = 'moved'; x.movedTo = ui.date; list.push({ id: uid(), text: x.text, state: 'open', box: boxOf(x), from: addDays(ui.date, -1) }); });
+      open.forEach(x => { x.state = 'moved'; x.movedTo = ui.date; list.push({ id: uid(), text: x.text, state: 'open', p: prioOf(x), from: addDays(ui.date, -1) }); });
       persist();
       render({ anim: false });
     },
@@ -1567,7 +1654,7 @@
             }
           }
           if (d.review && typeof d.review === 'object' && !reviewFilled(cur.review)) cur.review = d.review;
-          if (Array.isArray(d.todos)) { const ids = new Set((cur.todos || []).map(x => x.id)); cur.todos = [...(cur.todos || []), ...d.todos.filter(x => x && x.id && !ids.has(x.id)).map(x => ({ id: String(x.id), text: String(x.text || ''), state: ['open', 'done', 'moved'].includes(x.state) ? x.state : 'open', box: [1, 2, 3].includes(x.box) ? x.box : (x.prio ? 1 : 2) }))]; }
+          if (Array.isArray(d.todos)) { const ids = new Set((cur.todos || []).map(x => x.id)); cur.todos = [...(cur.todos || []), ...d.todos.filter(x => x && x.id && !ids.has(x.id)).map(x => ({ id: String(x.id), text: String(x.text || ''), state: ['open', 'doing', 'done', 'moved'].includes(x.state) ? x.state : 'open', p: prioOf(x) }))]; }
           if (d.plan && typeof d.plan === 'object') { cur.plan = { ...(cur.plan || {}) }; for (const [h, v] of Object.entries(d.plan)) if (/^\d\d$/.test(h) && !cur.plan[h]) cur.plan[h] = String(v); }
           if (typeof d.title === 'string' && !(cur.title || '').trim()) cur.title = d.title.slice(0, 80);
           cleanup(k);
@@ -1620,12 +1707,30 @@
 
   document.addEventListener('change', e => {
     if (e.target.id === 'young-toggle') { state.settings.young = e.target.checked; persist(); }
+    if (e.target.classList?.contains('htime-input')) {
+      const hh = e.target.dataset.hour, v = e.target.value;
+      if (/^\d{2}:\d{2}$/.test(v)) {
+        const d = ensureDay(ui.date);
+        d.planTimes ||= {};
+        if (v === `${hh}:00`) delete d.planTimes[hh]; else d.planTimes[hh] = v;
+        persist();
+      }
+      ui.editHour = null;
+      render({ anim: false });
+    }
     if (e.target.id === 'plan-start') { state.settings.planStart = Number(e.target.value); persist(); }
     if (e.target.id === 'plan-end') { state.settings.planEnd = Number(e.target.value); persist(); }
     if (e.target.id === 'import-file' && e.target.files[0]) { importFile(e.target.files[0]); e.target.value = ''; }
   });
 
+  document.addEventListener('focusout', e => {
+    if (e.target.classList?.contains('htime-input')) {
+      setTimeout(() => { if (ui.editHour && !document.activeElement?.closest?.('.htime.editing')) { ui.editHour = null; render({ anim: false }); } }, 150);
+    }
+  });
+
   document.addEventListener('keydown', e => {
+    if (e.target.classList?.contains('htime-input') && (e.key === 'Escape' || e.key === 'Enter')) { e.preventDefault(); e.target.blur(); return; }
     const mod = e.key === 'Enter' && (e.metaKey || e.ctrlKey);
     if (e.target.classList?.contains('todo-input') && e.key === 'Enter') { e.preventDefault(); actions['add-todo'](e.target); return; }
     if (e.target.classList?.contains('hinput') && e.key === 'Enter') { e.preventDefault(); const all = $$('.hinput'); const i = all.indexOf(e.target); all[i + 1]?.focus(); return; }

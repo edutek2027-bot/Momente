@@ -1120,3 +1120,87 @@ button.tb:not(:disabled):hover { background: var(--accent-soft); transform: scal
 .move-date input { border: 1px solid var(--border); border-radius: 999px; background: var(--paper); color: var(--text); padding: 6px 10px; font: 600 14px var(--font); }
 .moved-to, .from-tag { flex: 0 0 auto; font-size: 12px; font-weight: 700; color: var(--muted); padding: 1px 8px; border-radius: 999px; background: color-mix(in srgb, var(--muted) 14%, transparent); }
 .from-tag { color: var(--accent-strong); background: var(--accent-soft); }
+
+/* Stundenplan: eigene Uhrzeit */
+button.htime { border: 0; background: transparent; text-align: left; cursor: pointer; border-radius: 6px; padding: 10px 4px 0; margin-left: -4px; }
+button.htime:hover { background: var(--accent-soft); color: var(--accent-strong); }
+.hrow.custom .htime { color: var(--accent-strong); }
+.htime.editing { display: flex; flex-direction: column; gap: 4px; padding: 4px 0; }
+.htime-input { width: 100%; min-width: 0; border: 1px solid var(--accent); border-radius: 8px; background: var(--paper); color: var(--text); padding: 4px 4px; font: 700 13px var(--font); font-variant-numeric: tabular-nums; }
+.htime-reset { align-self: flex-start; border: 0; background: var(--accent-soft); color: var(--accent-strong); border-radius: 999px; width: 24px; height: 24px; font-size: 14px; }
+.hours .hrow { grid-template-columns: 76px minmax(0, 1fr); }
+.hrow.now::after { left: 70px; }
+.hrow.now::before { left: 66px; }
+
+/* Kästchen zum Abhaken */
+.tcheck {
+  flex: 0 0 auto; width: 24px; height: 24px; margin: 0 3px; padding: 0; border-radius: 7px; border: 2px solid var(--pc, var(--accent));
+  background: var(--paper); display: grid; place-items: center; transition: background 0.2s, transform 0.25s var(--spring);
+}
+.tcheck svg { width: 16px; height: 16px; fill: none; stroke: #fff; stroke-width: 3; stroke-linecap: round; stroke-linejoin: round; stroke-dasharray: 22; stroke-dashoffset: 22; transition: stroke-dashoffset 0.3s var(--ease); }
+.tcheck:hover { transform: scale(1.1); }
+.tcheck.on { background: var(--pc, var(--accent)); }
+.tcheck.on svg { stroke-dashoffset: 0; }
+.todo.checking { animation: checkOut 0.42s var(--ease) forwards; }
+.todo.unchecking { animation: checkOut 0.42s var(--ease) reverse forwards; }
+@keyframes checkOut { 0% { opacity: 1; transform: none; } 100% { opacity: 0; transform: translateY(14px); } }
+.tnum { flex: 0 0 auto; width: 18px; height: 18px; border-radius: 50%; display: grid; place-items: center; font-size: 11px; font-weight: 800; color: #fff; background: var(--p2); }
+.tnum.p1 { background: var(--p1); } .tnum.p3 { background: var(--p3); }
+
+/* Bereich „Erledigt“ */
+.tdone { margin: 0 0 14px; border: 1.5px solid var(--border); border-left-width: 6px; border-left-color: var(--muted); border-radius: 12px; background: var(--field); overflow: hidden; --pc: var(--muted); }
+.tdone-head { display: flex; align-items: center; gap: 10px; width: 100%; padding: 10px 12px; border: 0; background: transparent; text-align: left; }
+.tdone-head b { flex: 1; font-family: var(--serif); font-size: 17px; }
+.tdone-icon { width: 26px; height: 26px; border-radius: 50%; display: grid; place-items: center; background: var(--muted); color: #fff; font-weight: 800; }
+.tdone.open .chev { transform: rotate(180deg); }
+.tdone .todos { margin: 0; padding: 0 12px 6px; }
+.tdone .todo { border-bottom-color: var(--line); }
+.tdone .tcheck.on { background: var(--muted); border-color: var(--muted); }
+.tdone-empty { margin: 0; padding: 0 12px 12px; }
+
+/* =================== Aufgaben nach Stand: zu erledigen / in Arbeit / erledigt =================== */
+:root { --s-doing: #6d8fd6; --s-doing-bg: #e5ecfa; }
+:root[data-theme="dark"] { --s-doing: #8ea8e6; --s-doing-bg: #232f47; }
+@media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) { --s-doing: #8ea8e6; --s-doing-bg: #232f47; } }
+.tbox.s-open { --pc: var(--accent); --pb: color-mix(in srgb, var(--accent-soft) 70%, var(--paper)); }
+.tbox.s-doing { --pc: var(--s-doing); --pb: var(--s-doing-bg); }
+.tbox.s-done { --pc: var(--p3); --pb: var(--p3-bg); }
+.tbox .tbox-num { font-size: 15px; }
+.tbox-head.as-btn { width: 100%; border: 0; background: transparent; text-align: left; padding: 2px 0 6px; }
+.tbox.s-done:not(.open) .tbox-head.as-btn { padding-bottom: 2px; }
+.tbox.s-done.open .chev { transform: rotate(180deg); }
+.tbox .todo { flex-wrap: wrap; }
+.tcheck.half { background: linear-gradient(90deg, var(--pc) 50%, var(--paper) 50%); }
+.todo.st-done .tinput, .todo.st-done .ttext { text-decoration: line-through; text-decoration-color: var(--pc, var(--accent)); color: var(--muted); }
+.todo.st-moved .tinput { color: var(--muted); font-style: italic; }
+/* Prioritäts-Chip pro Aufgabe */
+.pchip {
+  flex: 0 0 auto; display: inline-flex; align-items: center; gap: 5px; padding: 2px 9px 2px 6px; border-radius: 999px;
+  border: 1px solid var(--border); background: var(--paper); font-size: 12px; font-weight: 700; color: var(--muted); white-space: nowrap;
+}
+.pchip i, .popt i { width: 10px; height: 10px; border-radius: 50%; background: var(--border-strong); }
+.pchip.p1, .popt.p1 { --dot: var(--p1); } .pchip.p2, .popt.p2 { --dot: var(--p2); } .pchip.p3, .popt.p3 { --dot: var(--p3); }
+.pchip.p1 i, .pchip.p2 i, .pchip.p3 i, .popt.p1 i, .popt.p2 i, .popt.p3 i { background: var(--dot); }
+.pchip.p1, .pchip.p2, .pchip.p3 { color: var(--text); border-color: color-mix(in srgb, var(--dot) 60%, transparent); background: color-mix(in srgb, var(--dot) 16%, var(--paper)); }
+.pchip.p0 { padding: 2px 8px; }
+.pchip.p0 i { display: none; }
+.prio-menu { flex: 1 0 100%; display: flex; flex-wrap: wrap; gap: 6px; padding: 2px 0 10px 34px; animation: rise 0.25s var(--ease) both; }
+.popt { display: inline-flex; align-items: center; gap: 6px; padding: 5px 11px; border-radius: 999px; border: 1px solid var(--border); background: var(--paper); font-size: 13px; font-weight: 600; }
+.popt.on { border-color: var(--accent); box-shadow: 0 0 0 2px var(--accent-soft); }
+/* Priorität beim Hinzufügen */
+.newprio { display: inline-flex; gap: 4px; }
+.npdot { width: 20px; height: 20px; border-radius: 50%; border: 2px solid transparent; padding: 0; background: var(--dot); opacity: 0.45; transition: opacity 0.2s, transform 0.2s var(--spring); }
+.npdot.p1 { --dot: var(--p1); } .npdot.p2 { --dot: var(--p2); } .npdot.p3 { --dot: var(--p3); }
+.npdot:hover { opacity: 0.8; transform: scale(1.1); }
+.npdot.on { opacity: 1; border-color: var(--text); transform: scale(1.15); }
+.todos.ro .todo.pm0 { border-left-color: var(--border-strong); }
+
+/* Schmale Bildschirme: Aufgabentext volle Breite, Priorität und Knöpfe darunter */
+@media (max-width: 560px) {
+  .tbox .todo .tinput { flex: 1 1 calc(100% - 40px); }
+  .tbox .todo .from-tag { margin-left: 34px; }
+  .tbox .todo .pchip { margin-left: 34px; }
+  .tbox .todo .tactions { margin-left: auto; opacity: 1; }
+  .tbox .todo { padding-bottom: 4px; }
+  .todo-add .newprio { order: 3; }
+}
