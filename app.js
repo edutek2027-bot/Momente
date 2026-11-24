@@ -15,7 +15,22 @@
   const TAGS = ['family', 'friends', 'work', 'school', 'idea', 'health', 'nature', 'gratitude'];
   const TAG_EMOJI = { family: '🏡', friends: '🤝', work: '💼', school: '📚', idea: '💡', health: '💪', nature: '🌳', gratitude: '🙏' };
   const VIEWS = ['pages', 'calendar', 'today', 'settings'];
-  const REVIEW_FIELDS = ['best', 'grateful', 'different', 'intention'];
+  const REVIEW_FIELDS = ['grateful', 'different', 'intention'];
+  const PALETTES = {
+    sage: { cover: '#5c9c74', accent: '#3d9467' },
+    sea: { cover: '#5b93b3', accent: '#3b82a6' },
+    lavender: { cover: '#8f7bc4', accent: '#7a62b8' },
+    sand: { cover: '#c99572', accent: '#c07a4a' },
+    rose: { cover: '#c47f94', accent: '#b8607a' }
+  };
+  const PAPERS = ['lined', 'dotted', 'grid', 'plain'];
+  const FONTS = { serif: '"Lora", Georgia, serif', sans: '"Inter", system-ui, sans-serif', hand: '"Patrick Hand", "Comic Sans MS", cursive' };
+  const PRESETS = {
+    classic: { palette: 'sage', paper: 'lined', font: 'serif' },
+    bullet: { palette: 'sand', paper: 'dotted', font: 'hand' },
+    journal: { palette: 'lavender', paper: 'plain', font: 'serif' },
+    grid: { palette: 'sea', paper: 'grid', font: 'sans' }
+  };
   const svg = p => `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${p}</svg>`;
   const ICONS = {
     today: svg('<path d="M12 20h9"/><path d="M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4Z"/>'),
@@ -55,7 +70,7 @@
   };
 
   /* ---------- Zustand ---------- */
-  const defaultState = () => ({ settings: { lang: null, theme: 'light', young: false, name: '', corner: 'quote' }, days: {} });
+  const defaultState = () => ({ settings: { lang: null, theme: 'light', young: false, name: '', corner: 'quote', palette: 'sage', paper: 'lined', font: 'serif', size: 'm' }, days: {} });
   function load() {
     try {
       const raw = localStorage.getItem(STORE_KEY);
@@ -84,7 +99,7 @@
     view: 'today',
     date: todayKey(),
     lastToday: todayKey(),
-    draft: { title: '', text: '', mood: null, tags: [] },
+    draft: { title: '', time: '', text: '', mood: null, tags: [] },
     openMoments: new Set(),
     detailsOpen: false,
     editing: null,
@@ -128,6 +143,8 @@
     ? fmtBs(d, opts)
     : new Intl.DateTimeFormat(LOCALES[lang()] || 'en-GB', opts).format(d);
   const fmtTime = ts => fmt(new Date(ts), { hour: '2-digit', minute: '2-digit' });
+  const hhmm = d => `${pad(d.getHours())}:${pad(d.getMinutes())}`;
+  function timeOn(k, value) { const d = dateOf(k); const [h, mi] = value.split(':').map(Number); d.setHours(h || 0, mi || 0, 0, 0); return d.getTime(); }
 
   function greeting() {
     const h = new Date().getHours();
@@ -167,14 +184,13 @@
   /* ---------- Datenzugriff ---------- */
   const day = k => state.days[k];
   const ensureDay = k => (state.days[k] ||= { moments: [], review: null });
-  const reviewFilled = r => !!r && !!(r.savedAt || r.rating || (r.word || '').trim() || REVIEW_FIELDS.some(f => (r[f] || '').trim()));
+  const reviewFilled = r => !!r && !!(r.savedAt || REVIEW_FIELDS.some(f => (r[f] || '').trim()));
   const hasContent = k => { const d = day(k); return !!d && (d.moments.length > 0 || reviewFilled(d.review) || !!(d.title || '').trim()); };
   function cleanup(k) { if (day(k) && !hasContent(k)) delete state.days[k]; }
   function dayMood(k) {
     const d = day(k); if (!d) return 0;
     const ms = d.moments.filter(m => m.mood).map(m => m.mood);
-    if (ms.length) return Math.round(ms.reduce((a, b) => a + b, 0) / ms.length);
-    return d.review?.rating || 0;
+    return ms.length ? Math.round(ms.reduce((a, b) => a + b, 0) / ms.length) : 0;
   }
   function streak() {
     let k = todayKey(), n = 0;
@@ -233,7 +249,10 @@
         <li class="mitem open editing" data-id="${m.id}">
           <div class="mhead static">${num}<span class="mtitle">${esc(t('edit'))}</span><time class="mtime">${esc(fmtTime(m.time))}</time></div>
           <div class="mbody">
-            <input id="edit-title" class="moment-title" type="text" maxlength="80" placeholder="${esc(t('momentTitlePh'))}" value="${esc(m.title || '')}">
+            <div class="mt-row">
+              <input id="edit-title" class="moment-title" type="text" maxlength="80" placeholder="${esc(t('momentTitlePh'))}" value="${esc(m.title || '')}">
+              <label class="time-pick" title="${esc(t('timeLabel'))}"><span class="sr">${esc(t('timeLabel'))}</span><input id="edit-time" type="time" value="${hhmm(new Date(m.time))}"></label>
+            </div>
             <textarea id="edit-text" class="lined" rows="2" aria-label="${esc(t('edit'))}">${esc(m.text)}</textarea>
             <div class="mchips small">${moodChips('edit-mood', ui.editMood)}</div>
             <div class="edit-actions">
@@ -295,7 +314,10 @@
         <input id="day-title" class="day-title" type="text" maxlength="80" placeholder="${esc(t('titlePlaceholder'))}" value="${esc(d?.title || '')}">
       </label>
       <section class="composer" id="composer">
-        <input id="moment-title" class="moment-title" type="text" maxlength="80" placeholder="${esc(t('momentTitlePh'))}" aria-label="${esc(t('momentTitlePh'))}" value="${esc(ui.draft.title)}">
+        <div class="mt-row">
+          <input id="moment-title" class="moment-title" type="text" maxlength="80" placeholder="${esc(t('momentTitlePh'))}" aria-label="${esc(t('momentTitlePh'))}" value="${esc(ui.draft.title)}">
+          <label class="time-pick" title="${esc(t('timeLabel'))}"><span class="sr">${esc(t('timeLabel'))}</span><input id="moment-time" type="time" value="${esc(ui.draft.time || hhmm(new Date()))}"></label>
+        </div>
         <textarea id="moment-text" class="lined" rows="4" placeholder="${esc(tq('placeholder'))}" aria-label="${esc(t('placeholder'))}">${esc(ui.draft.text)}</textarea>
         <div class="details ${ui.detailsOpen ? 'open' : ''}" id="details">
           <div class="details-inner">
@@ -338,22 +360,13 @@
         <button class="review-toggle" data-action="toggle-review" aria-expanded="${open}" aria-controls="review-body">
           <span class="rv-icon">${ICONS.review}</span>
           <span class="rv-text"><strong>${esc(t('reviewTitle'))}</strong><small>${esc(t('reviewIntro'))}</small></span>
-          ${r.rating ? `<span class="rv-stars" aria-label="${r.rating}/5">${'★'.repeat(r.rating)}</span>` : ''}
           ${r.savedAt ? '<span class="rv-done" aria-hidden="true">✓</span>' : ''}
           <span class="chev" aria-hidden="true">⌄</span>
         </button>
         <div class="details ${open ? 'open' : ''}" id="review-body">
           <div class="details-inner">
             <div class="rv-content">
-              <span class="label">${esc(t('rating'))}</span>
-              <div class="stars" role="radiogroup" aria-label="${esc(t('rating'))}">
-                ${[1, 2, 3, 4, 5].map(v => `<button class="star ${(r.rating || 0) >= v ? 'on' : ''}" data-action="rate" data-v="${v}" role="radio" aria-checked="${r.rating === v}" aria-label="${v}/5">★</button>`).join('')}
-              </div>
               ${REVIEW_FIELDS.map(field).join('')}
-              <label class="field">
-                <span class="field-label">${esc(t('word'))}</span>
-                <input type="text" class="lined-input" data-field="word" maxlength="40" placeholder="${esc(t('wordPlaceholder'))}" value="${esc(r.word || '')}">
-              </label>
               <button class="btn primary" data-action="save-review">${esc(t('saveReview'))}</button>
               ${r.savedAt ? `<p class="done-note">✓ ${esc(t('reviewDone'))} · ${esc(fmtTime(r.savedAt))}</p>` : ''}
             </div>
@@ -430,25 +443,25 @@
     const r = d.review;
     const moods = ms.filter(m => m.mood);
     const title = (d.title || '').trim();
-    const best = (r?.best || '').trim();
-    const word = (r?.word || '').trim();
     const avg = dayMood(k);
-    const facts = [
-      avg ? `<div class="fact"><span class="fact-label">${esc(t('moodLegend'))}</span><span class="fact-val"><i class="mdot-s" style="--c:var(--mood-${avg})"></i>${esc(t('mood' + avg))}</span></div>` : '',
-      r?.rating ? `<div class="fact"><span class="fact-label">${esc(t('ratingShort'))}</span><span class="fact-val stars-s" aria-label="${r.rating}/5">${'★'.repeat(r.rating)}<span class="off">${'★'.repeat(5 - r.rating)}</span></span></div>` : '',
-      `<div class="fact"><span class="fact-label">${esc(t('momentsHeading'))}</span><span class="fact-val">${ms.length}</span></div>`
-    ].join('');
+    const notes = REVIEW_FIELDS.filter(f => (r?.[f] || '').trim());
     return `
       <div class="page-content">
         <div class="page-head">
           <span class="page-weekday">${esc(fmt(dateOf(k), { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' }))}</span>
           <h2 class="page-title ${title ? '' : 'untitled'}">${esc(title || t('untitled'))}</h2>
-          ${moods.length ? `<span class="mood-strip" aria-hidden="true">${moods.map(m => `<i style="--c:var(--mood-${m.mood})"></i>`).join('')}</span>` : ''}
         </div>
-        ${word ? `<p class="page-word">„${esc(word)}“</p>` : ''}
-        <div class="facts">${facts}</div>
-        ${best ? `<p class="page-best"><span class="pr-label">${esc(tq('best'))}</span>${esc(best)}</p>` : ''}
-        ${ms.length ? `<h3 class="page-sub">${esc(t('momentsHeading'))}</h3>${momentList(ms, true)}` : ''}
+        <div class="facts">
+          <div class="fact"><span class="fact-label">${esc(t('momentsHeading'))}</span><span class="fact-val">${ms.length}</span></div>
+          <div class="fact"><span class="fact-label">${esc(t('moodLegend'))}</span><span class="fact-val">${avg ? `<i class="mdot-s" style="--c:var(--mood-${avg})"></i>${esc(t('mood' + avg))}` : '—'}</span></div>
+          ${moods.length ? `<div class="fact"><span class="fact-label">&nbsp;</span><span class="mood-strip" aria-hidden="true">${moods.map(m => `<i style="--c:var(--mood-${m.mood})"></i>`).join('')}</span></div>` : ''}
+        </div>
+        ${ms.length ? momentList(ms, true) : ''}
+        ${notes.length ? `
+          <div class="page-review">
+            <h3>${esc(t('review'))}</h3>
+            ${notes.map(f => `<p class="pr-line"><span class="pr-label">${esc(tq(f))}</span>${esc(r[f])}</p>`).join('')}
+          </div>` : ''}
         <div class="ruled-fill" aria-hidden="true"></div>
         <footer class="page-foot">
           <button class="link-btn" data-action="open-day" data-k="${k}">${esc(t('openDay'))} →</button>
@@ -552,7 +565,7 @@
       const d = state.days[k];
       if ((d.title || '').toLocaleLowerCase().includes(q)) hits.push({ k, text: d.title, mood: dayMood(k) });
       for (const m of d.moments) { const tx = [m.title, m.text].filter(Boolean).join(' — '); if (tx.toLocaleLowerCase().includes(q)) hits.push({ k, text: tx, mood: m.mood }); }
-      if (d.review) for (const f of [...REVIEW_FIELDS, 'word']) {
+      if (d.review) for (const f of REVIEW_FIELDS) {
         const v = d.review[f] || '';
         if (v.toLocaleLowerCase().includes(q)) hits.push({ k, text: v, mood: 0 });
       }
@@ -581,30 +594,62 @@
       <span class="lang-check" aria-hidden="true">✓</span>
     </button>`).join('');
 
+  const choice = (pref, val, cur, inner, cls = '') =>
+    `<button class="${cls} ${cur === val ? 'on' : ''}" data-action="set-pref" data-pref="${pref}" data-val="${val}" aria-pressed="${cur === val}">${inner}</button>`;
+  const preview = (palette, paper, font) =>
+    `<span class="pv" data-pv-paper="${paper}" style="--pv-cover:${PALETTES[palette].cover};--pv-accent:${PALETTES[palette].accent};--pv-font:${FONTS[font].replace(/"/g, "'")}" aria-hidden="true"><span class="pv-title">Aa</span><span class="pv-text">${esc(t('momentsHeading'))}</span></span>`;
+
   function renderSettings() {
     const s = state.settings;
+    const presetOn = name => Object.entries(PRESETS[name]).every(([k, v]) => s[k] === v);
     const l = `
       <header class="hero">
         <p class="eyebrow">Momente</p>
         <h1 class="title">${esc(t('settings'))}</h1>
       </header>
-      <section class="block">
-        ${heading(t('language'))}
-        <div class="langs">${langCards('set-lang', s.lang)}</div>
-      </section>
-      <section class="block">
-        ${heading(t('appearance'))}
+      <section class="block" data-group="appearance">
+        ${heading(t('personalize'))}
+        <span class="label">${esc(t('presets'))}</span>
+        <div class="presets">
+          ${Object.keys(PRESETS).map(n => `
+            <button class="preset ${presetOn(n) ? 'on' : ''}" data-action="apply-preset" data-preset="${n}" aria-pressed="${presetOn(n)}">
+              ${preview(PRESETS[n].palette, PRESETS[n].paper, PRESETS[n].font)}
+              <span class="preset-name">${esc(t('preset_' + n))}</span>
+              <small>${esc(t('pdesc_' + n))}</small>
+            </button>`).join('')}
+        </div>
+        <span class="label">${esc(t('palette'))}</span>
+        <div class="swatches" data-group="palette">
+          ${Object.keys(PALETTES).map(p => choice('palette', p, s.palette, `<i style="--sw:${PALETTES[p].cover};--sw2:${PALETTES[p].accent}"></i><span>${esc(t('pal_' + p))}</span>`, 'swatch')).join('')}
+        </div>
+        <span class="label">${esc(t('paper'))}</span>
+        <div class="papers" data-group="paper">
+          ${PAPERS.map(p => choice('paper', p, s.paper, `<span class="pv mini" data-pv-paper="${p}" aria-hidden="true"></span><span>${esc(t('paper_' + p))}</span>`, 'paper-tile')).join('')}
+        </div>
+        <span class="label">${esc(t('fontLabel'))}</span>
+        <div class="seg" data-group="font">
+          ${Object.keys(FONTS).map(f => choice('font', f, s.font, `<span class="font-aa" style="font-family:${FONTS[f].replace(/"/g, "'")}">Aa</span> ${esc(t('font_' + f))}`)).join('')}
+        </div>
+        <span class="label">${esc(t('sizeLabel'))}</span>
+        <div class="seg" data-group="size">
+          ${['s', 'm', 'l'].map(z => choice('size', z, s.size, esc(t('size_' + z)))).join('')}
+        </div>
+        <span class="label">${esc(t('modeLabel'))}</span>
         <div class="seg seg-theme" role="radiogroup">
           ${['light', 'dark', 'auto'].map(th => `<button class="${s.theme === th ? 'on' : ''}" data-action="set-theme" data-theme="${th}" role="radio" aria-checked="${s.theme === th}">${esc(t('theme' + th[0].toUpperCase() + th.slice(1)))}</button>`).join('')}
         </div>
+      </section>`;
+    const r = `
+      <section class="block">
+        ${heading(t('language'))}
+        <div class="langs">${langCards('set-lang', s.lang)}</div>
       </section>
       <section class="block">
         ${heading(t('cornerTitle'))}
         <div class="seg seg-corner wrap" role="radiogroup">
           ${['quote', 'question', 'off'].map(c => `<button class="${(s.corner || 'quote') === c ? 'on' : ''}" data-action="set-corner" data-corner="${c}" role="radio" aria-checked="${(s.corner || 'quote') === c}">${esc(t('corner_' + c))}</button>`).join('')}
         </div>
-      </section>`;
-    const r = `
+      </section>
       <section class="block">
         ${heading(t('profile'))}
         <label class="field">
@@ -627,7 +672,7 @@
         <button class="btn danger" data-action="wipe">${esc(t('wipe'))}</button>
       </section>
       <p class="muted center small">${esc(t('installTip'))}</p>
-      <p class="muted center small">Momente · v2.0</p>`;
+      <p class="muted center small">Momente · v2.2</p>`;
     return { l, r };
   }
 
@@ -907,7 +952,17 @@
   function shake(el) { if (!el) return; el.classList.remove('shake'); void el.offsetWidth; el.classList.add('shake'); }
 
   /* ---------- Theme ---------- */
+  function applyAppearance() {
+    const s = state.settings;
+    const root = document.documentElement.dataset;
+    root.palette = PALETTES[s.palette] ? s.palette : 'sage';
+    root.paper = PAPERS.includes(s.paper) ? s.paper : 'lined';
+    root.font = FONTS[s.font] ? s.font : 'serif';
+    root.size = ['s', 'm', 'l'].includes(s.size) ? s.size : 'm';
+  }
+
   function applyTheme() {
+    applyAppearance();
     const th = state.settings.theme;
     if (th === 'auto') delete document.documentElement.dataset.theme;
     else document.documentElement.dataset.theme = th;
@@ -972,6 +1027,18 @@
       el.setAttribute('aria-expanded', ui.reviewOpen);
       if (ui.reviewOpen) $$('#review-body textarea').forEach(autosize);
     },
+    'set-pref': el => {
+      state.settings[el.dataset.pref] = el.dataset.val;
+      persist();
+      applyAppearance();
+      render({ anim: false });
+    },
+    'apply-preset': el => {
+      Object.assign(state.settings, PRESETS[el.dataset.preset]);
+      persist();
+      applyAppearance();
+      render({ anim: false });
+    },
     'set-corner': el => {
       state.settings.corner = el.dataset.corner;
       persist();
@@ -1000,13 +1067,14 @@
       const title = ($('#moment-title')?.value || '').trim();
       if (!text && !title && !ui.draft.mood) { shake($('#composer')); toast(t('writeSomething')); $('#moment-text')?.focus(); return; }
       const now = new Date();
+      const tv = $('#moment-time')?.value || '';
       let time = now.getTime();
-      if (ui.date !== todayKey()) { const d = dateOf(ui.date); d.setHours(now.getHours(), now.getMinutes()); time = d.getTime(); }
+      if (tv && (ui.draft.time || ui.date !== todayKey())) time = timeOn(ui.date, tv);
       const m = { id: uid(), time, title, text, mood: ui.draft.mood, tags: [...ui.draft.tags] };
       ensureDay(ui.date).moments.push(m);
       persist();
       burst(el);
-      ui.draft = { title: '', text: '', mood: null, tags: [] };
+      ui.draft = { title: '', time: '', text: '', mood: null, tags: [] };
       ui.detailsOpen = false;
       ui.justAdded = m.id;
       render({ anim: false });
@@ -1031,9 +1099,12 @@
       const title = ($('#edit-title')?.value || '').trim();
       if (!m) return;
       if (!text && !title && !ui.editMood) { shake(el.closest('.mbody')); toast(t('writeSomething')); return; }
-      if (text !== m.text || title !== (m.title || '') || ui.editMood !== (m.mood || null)) {
+      const tv = $('#edit-time')?.value || '';
+      const newTime = tv && tv !== hhmm(new Date(m.time)) ? timeOn(ui.date, tv) : m.time;
+      if (text !== m.text || title !== (m.title || '') || ui.editMood !== (m.mood || null) || newTime !== m.time) {
         m.text = text;
         m.title = title;
+        m.time = newTime;
         m.mood = ui.editMood;
         m.editedAt = Date.now();
         persist();
@@ -1168,6 +1239,7 @@
     if (el.tagName === 'TEXTAREA') autosize(el);
     if (el.id === 'moment-text') ui.draft.text = el.value;
     else if (el.id === 'moment-title') ui.draft.title = el.value;
+    else if (el.id === 'moment-time') ui.draft.time = el.value;
     else if (el.id === 'search') runSearch(el.value);
     else if (el.id === 'day-title') { ensureDay(ui.date).title = el.value; cleanup(ui.date); persist(false); }
     else if (el.id === 'name-input') { state.settings.name = el.value.trim(); persist(false); }

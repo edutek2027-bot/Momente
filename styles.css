@@ -792,3 +792,128 @@ mark { background: color-mix(in srgb, var(--gold) 35%, transparent); color: inhe
     animation-delay: 0ms !important; transition-duration: 0.01ms !important; scroll-behavior: auto !important;
   }
 }
+
+/* =================== Persönliche Gestaltung =================== */
+/* Farbpaletten (hell). Salbei ist die Grundeinstellung in :root. */
+:root[data-palette="sea"] {
+  --bg: #eef4f8; --bg2: #e0ebf3; --paper: #fcfdfe; --field: #f4f8fb; --line: #dfe9f0; --border: #d5e3ec; --border-strong: #b7cddb;
+  --accent: #3b82a6; --accent-strong: #2c6a8a; --accent-soft: #e0eef6; --cover: #5b93b3; --cover-edge: #4d819f;
+  --tab-1: #d3e6f1; --tab-2: #dbe9f3; --tab-3: #cfe3ee; --tab-4: #e0eaf0;
+  --blob1: #d3e7f3; --blob2: #e2eef6; --blob3: #d0e6ea; --mood-4: #b6d8ea; --mood-5: #7fb8d8; --mood-0: #e3edf3;
+}
+:root[data-palette="lavender"] {
+  --bg: #f4f1f9; --bg2: #eae4f4; --paper: #fdfcff; --field: #f8f6fc; --line: #e9e3f2; --border: #e0d8ee; --border-strong: #c9bce0;
+  --accent: #7a62b8; --accent-strong: #644da0; --accent-soft: #eee9f8; --cover: #8f7bc4; --cover-edge: #7d69b2;
+  --tab-1: #e6def5; --tab-2: #ece4f6; --tab-3: #e1dbf2; --tab-4: #efe9f5;
+  --blob1: #e6dcf6; --blob2: #efe7f8; --blob3: #dfe1f4; --mood-4: #cdbfeb; --mood-5: #a690dc; --mood-0: #ece7f4;
+}
+:root[data-palette="sand"] {
+  --bg: #f8f3ee; --bg2: #f0e7dd; --paper: #fffdf9; --field: #fbf7f2; --line: #efe5da; --border: #e8dccf; --border-strong: #d6c3b0;
+  --accent: #b8703f; --accent-strong: #9a5a2f; --accent-soft: #f6eadf; --cover: #c99572; --cover-edge: #b88361;
+  --tab-1: #f1e2d3; --tab-2: #f4e8da; --tab-3: #eee0d0; --tab-4: #f3ebe1;
+  --blob1: #f4e1cf; --blob2: #f7ecdf; --blob3: #efe3d6; --mood-4: #f0cfae; --mood-5: #e6a87a; --mood-0: #f1e8de;
+}
+:root[data-palette="rose"] {
+  --bg: #f9f2f4; --bg2: #f1e5e9; --paper: #fffcfd; --field: #fcf7f8; --line: #f0e2e7; --border: #ead7de; --border-strong: #d8bcc7;
+  --accent: #b05a74; --accent-strong: #944660; --accent-soft: #f7e6ec; --cover: #c47f94; --cover-edge: #b06d82;
+  --tab-1: #f3dde4; --tab-2: #f5e4e9; --tab-3: #efdbe2; --tab-4: #f5e9ed;
+  --blob1: #f5dbe3; --blob2: #f8e7ec; --blob3: #efdfe6; --mood-4: #f0c6d3; --mood-5: #e397ad; --mood-0: #f3e7eb;
+}
+/* Dunkel + Farbpalette: dunkles Papier, Farbe der Palette bleibt erkennbar */
+:root[data-theme="dark"][data-palette]:not([data-palette="sage"]) {
+  --bg: #15161a; --bg2: #1b1d22; --paper: #1f2126; --field: #25272d; --line: #2e3138; --border: #30333a; --border-strong: #454953;
+  --accent-strong: color-mix(in srgb, var(--accent) 60%, #fff); --accent-soft: color-mix(in srgb, var(--accent) 24%, #1f2126);
+  --cover: color-mix(in srgb, var(--accent) 60%, #111); --cover-edge: color-mix(in srgb, var(--accent) 50%, #000);
+  --tab-1: color-mix(in srgb, var(--accent) 22%, #1f2126); --tab-2: color-mix(in srgb, var(--accent) 16%, #1f2126);
+  --tab-3: color-mix(in srgb, var(--accent) 28%, #1f2126); --tab-4: color-mix(in srgb, var(--accent) 12%, #1f2126);
+  --blob1: color-mix(in srgb, var(--accent) 25%, #15161a); --blob2: #1e2026; --blob3: color-mix(in srgb, var(--accent) 15%, #15161a);
+  --mood-0: #2d3037; --mood-4: color-mix(in srgb, var(--accent) 45%, #1f2126); --mood-5: color-mix(in srgb, var(--accent) 70%, #1f2126);
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"])[data-palette]:not([data-palette="sage"]) {
+    --bg: #15161a; --bg2: #1b1d22; --paper: #1f2126; --field: #25272d; --line: #2e3138; --border: #30333a; --border-strong: #454953;
+    --accent-strong: color-mix(in srgb, var(--accent) 60%, #fff); --accent-soft: color-mix(in srgb, var(--accent) 24%, #1f2126);
+    --cover: color-mix(in srgb, var(--accent) 60%, #111); --cover-edge: color-mix(in srgb, var(--accent) 50%, #000);
+    --tab-1: color-mix(in srgb, var(--accent) 22%, #1f2126); --tab-2: color-mix(in srgb, var(--accent) 16%, #1f2126);
+    --tab-3: color-mix(in srgb, var(--accent) 28%, #1f2126); --tab-4: color-mix(in srgb, var(--accent) 12%, #1f2126);
+    --blob1: color-mix(in srgb, var(--accent) 25%, #15161a); --blob2: #1e2026; --blob3: color-mix(in srgb, var(--accent) 15%, #15161a);
+    --mood-0: #2d3037; --mood-4: color-mix(in srgb, var(--accent) 45%, #1f2126); --mood-5: color-mix(in srgb, var(--accent) 70%, #1f2126);
+  }
+}
+
+/* Papierarten */
+:root { --dot: color-mix(in srgb, var(--muted) 45%, transparent); }
+:root[data-paper="dotted"] .page-body {
+  background-image: radial-gradient(circle, var(--dot) 1.1px, transparent 1.4px); background-size: 22px 22px; background-attachment: local;
+}
+:root[data-paper="grid"] .page-body {
+  background-image: linear-gradient(var(--line) 1px, transparent 1px), linear-gradient(90deg, var(--line) 1px, transparent 1px);
+  background-size: 22px 22px; background-attachment: local;
+}
+:root[data-paper]:not([data-paper="lined"]) .lined,
+:root[data-paper]:not([data-paper="lined"]) .lined:focus,
+:root[data-paper]:not([data-paper="lined"]) .ruled-fill { background-image: none; }
+:root[data-paper]:not([data-paper="lined"]) .composer { background: color-mix(in srgb, var(--paper) 88%, transparent); }
+/* Bullet Journal: schlichte Nummern statt Kreise */
+:root[data-paper="dotted"] .mnum { display: inline-flex; align-items: center; justify-content: center; height: 24px; border: 0; border-radius: 4px; width: auto; min-width: 24px; padding: 0 5px; font-family: var(--font); font-size: 13px; background: var(--accent-soft); }
+:root[data-paper="dotted"] .mnum::after { content: "."; }
+:root[data-paper="dotted"] .mitem.open .mnum { background: var(--accent); }
+/* Blanko-Journal: erster Buchstabe des Eintrags als Initial */
+:root[data-paper="plain"] .mbody .m-text::first-letter { font-family: var(--serif); font-size: 2.3em; float: left; line-height: 0.9; padding: 4px 6px 0 0; color: var(--accent-strong); }
+
+/* Schriften */
+:root[data-font="sans"] { --serif: "Inter", system-ui, -apple-system, "Segoe UI", Roboto, Arial, sans-serif; }
+:root[data-font="hand"] { --serif: "Patrick Hand", "Comic Sans MS", "Segoe Print", cursive; }
+:root[data-font="hand"] .m-text, :root[data-font="hand"] .lined, :root[data-font="hand"] .mtitle, :root[data-font="hand"] .page-title { letter-spacing: 0.01em; }
+
+/* Schriftgröße */
+:root[data-size="s"] .page-body { zoom: 0.92; }
+:root[data-size="l"] .page-body { zoom: 1.1; }
+
+/* Uhrzeit beim Schreiben */
+.mt-row { display: flex; align-items: center; gap: 10px; }
+.mt-row .moment-title { flex: 1; min-width: 0; }
+.time-pick { flex: 0 0 auto; }
+.time-pick input {
+  border: 1px solid var(--border); border-radius: 999px; background: var(--paper); color: var(--text);
+  padding: 6px 10px; font: 600 14px var(--font); font-variant-numeric: tabular-nums; outline: 0;
+}
+.time-pick input:focus { border-color: var(--accent); box-shadow: 0 0 0 3px var(--accent-soft); }
+.sr { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
+
+/* Einstellungen: Vorlagen, Farben, Papiere */
+.presets { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; }
+.preset {
+  display: flex; flex-direction: column; gap: 4px; padding: 8px 8px 10px; border: 1.5px solid var(--border); border-radius: 12px;
+  background: var(--paper); text-align: left; transition: transform 0.25s var(--spring), border-color 0.2s;
+}
+.preset:hover { transform: translateY(-2px); border-color: var(--border-strong); }
+.preset.on { border-color: var(--accent); box-shadow: 0 0 0 3px var(--accent-soft); }
+.preset-name { font-weight: 700; font-size: 14px; margin-top: 4px; }
+.preset small { color: var(--muted); font-size: 12px; line-height: 1.3; }
+.pv {
+  position: relative; display: block; height: 64px; border-radius: 8px; border: 1px solid var(--border); overflow: hidden;
+  padding: 8px 10px 8px 16px; background-color: #fdfdf8;
+}
+.pv::before { content: ""; position: absolute; left: 0; top: 0; bottom: 0; width: 6px; background: var(--pv-cover, var(--cover)); }
+.pv[data-pv-paper="lined"] { background-image: repeating-linear-gradient(to bottom, transparent 0, transparent 13px, #dfe6dd 13px, #dfe6dd 14px); }
+.pv[data-pv-paper="dotted"] { background-image: radial-gradient(circle, #b9bdb5 1px, transparent 1.3px); background-size: 9px 9px; }
+.pv[data-pv-paper="grid"] { background-image: linear-gradient(#e0e5de 1px, transparent 1px), linear-gradient(90deg, #e0e5de 1px, transparent 1px); background-size: 9px 9px; }
+.pv-title { display: block; font-family: var(--pv-font, var(--serif)); font-size: 20px; font-weight: 600; line-height: 1.1; color: var(--pv-accent, var(--accent-strong)); }
+.pv-text { display: block; font-family: var(--pv-font, var(--serif)); font-size: 12px; color: #4b5a50; margin-top: 4px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.pv.mini { height: 40px; width: 100%; padding: 0; }
+.swatches { display: flex; flex-wrap: wrap; gap: 8px; }
+.swatch {
+  display: inline-flex; align-items: center; gap: 8px; padding: 5px 12px 5px 5px; border: 1.5px solid var(--border); border-radius: 999px;
+  background: var(--paper); font-size: 14px; font-weight: 600; transition: border-color 0.2s, transform 0.25s var(--spring);
+}
+.swatch i { width: 24px; height: 24px; border-radius: 50%; background: linear-gradient(135deg, var(--sw) 50%, var(--sw2) 50%); box-shadow: inset 0 0 0 1px rgba(0, 0, 0, 0.12); }
+.swatch:hover { transform: translateY(-2px); }
+.swatch.on { border-color: var(--accent); box-shadow: 0 0 0 3px var(--accent-soft); }
+.papers { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 8px; }
+.paper-tile { display: flex; flex-direction: column; gap: 6px; padding: 6px 6px 8px; border: 1.5px solid var(--border); border-radius: 10px; background: var(--paper); font-size: 13px; font-weight: 600; text-align: center; }
+.paper-tile.on { border-color: var(--accent); box-shadow: 0 0 0 3px var(--accent-soft); }
+.font-aa { font-size: 17px; margin-right: 2px; }
+[data-group="appearance"] .label { margin-top: 18px; }
+[data-group="appearance"] .label:first-of-type { margin-top: 4px; }
+@media (max-width: 380px) { .papers { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
