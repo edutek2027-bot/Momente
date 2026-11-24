@@ -88,7 +88,24 @@
     return typeof v === 'function' ? v(...args) : v;
   }
   const tq = key => (state.settings.young && I18N[lang()]['y_' + key]) ? t('y_' + key) : t(key);
-  const fmt = (d, opts) => new Intl.DateTimeFormat(LOCALES[lang()] || 'en-GB', opts).format(d);
+  // Bosnisch: nicht jeder Browser hat Kalenderdaten für "bs" → eigene Namen als Rückfall
+  const BS_SUPPORTED = (() => { try { return Intl.DateTimeFormat.supportedLocalesOf(['bs-BA']).length > 0 && new Intl.DateTimeFormat('bs-BA', { month: 'long' }).format(new Date(2024, 10, 1)).toLowerCase().includes('nov'); } catch (e) { return false; } })();
+  const BS_MONTHS = ['januar', 'februar', 'mart', 'april', 'maj', 'juni', 'juli', 'august', 'septembar', 'oktobar', 'novembar', 'decembar'];
+  const BS_DAYS = ['nedjelja', 'ponedjeljak', 'utorak', 'srijeda', 'četvrtak', 'petak', 'subota'];
+  const BS_NARROW = ['N', 'P', 'U', 'S', 'Č', 'P', 'S'];
+  function fmtBs(d, o) {
+    if (o.hour) return `${pad(d.getHours())}:${pad(d.getMinutes())}`;
+    if (o.weekday === 'narrow') return BS_NARROW[d.getDay()];
+    const parts = [];
+    if (o.weekday) parts.push(BS_DAYS[d.getDay()] + (o.day || o.month ? ',' : ''));
+    if (o.day) parts.push(d.getDate() + '.');
+    if (o.month) parts.push(o.month === 'short' ? BS_MONTHS[d.getMonth()].slice(0, 3) : BS_MONTHS[d.getMonth()]);
+    if (o.year) parts.push(d.getFullYear() + '.');
+    return parts.join(' ');
+  }
+  const fmt = (d, opts) => (lang() === 'bs' && !BS_SUPPORTED)
+    ? fmtBs(d, opts)
+    : new Intl.DateTimeFormat(LOCALES[lang()] || 'en-GB', opts).format(d);
   const fmtTime = ts => fmt(new Date(ts), { hour: '2-digit', minute: '2-digit' });
 
   function greeting() {

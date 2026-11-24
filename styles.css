@@ -129,6 +129,7 @@ button:disabled { cursor: default; opacity: 0.35; }
   margin: 0; font-family: var(--serif); font-weight: 600;
   font-size: clamp(30px, 8vw, 42px); line-height: 1.1; letter-spacing: -0.01em;
 }
+.title::first-letter { text-transform: uppercase; }
 .grad {
   background: linear-gradient(90deg, var(--accent), var(--accent-2), var(--accent));
   background-size: 200% auto;
