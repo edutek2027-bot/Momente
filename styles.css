@@ -1204,3 +1204,17 @@ button.htime:hover { background: var(--accent-soft); color: var(--accent-strong)
   .tbox .todo { padding-bottom: 4px; }
   .todo-add .newprio { order: 3; }
 }
+
+/* Drei klar unterscheidbare Farben für die Aufgaben-Bereiche */
+:root { --s-open: #e08a3c; --s-open-bg: #fcebd9; --s-done: #4fa36f; --s-done-bg: #e0f1e6; }
+:root[data-theme="dark"] { --s-open: #eba86c; --s-open-bg: #3b2b1c; --s-done: #74c18f; --s-done-bg: #1f3528; }
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) { --s-open: #eba86c; --s-open-bg: #3b2b1c; --s-done: #74c18f; --s-done-bg: #1f3528; }
+}
+.tbox.s-open { --pc: var(--s-open); --pb: var(--s-open-bg); }
+.tbox.s-doing { --pc: var(--s-doing); --pb: var(--s-doing-bg); }
+.tbox.s-done { --pc: var(--s-done); --pb: var(--s-done-bg); }
+.tbox.s-open .tadd, .tbox.s-open .tbox-num { background: var(--s-open); }
+.tbox.s-doing .tbox-num { background: var(--s-doing); }
+.tbox.s-done .tbox-num { background: var(--s-done); }
+.tbox .tbox-count { background: color-mix(in srgb, var(--pc) 28%, transparent); }
