@@ -1218,3 +1218,18 @@ button.htime:hover { background: var(--accent-soft); color: var(--accent-strong)
 .tbox.s-doing .tbox-num { background: var(--s-doing); }
 .tbox.s-done .tbox-num { background: var(--s-done); }
 .tbox .tbox-count { background: color-mix(in srgb, var(--pc) 28%, transparent); }
+
+/* Themen */
+.topics-hint { margin: -2px 0 10px; }
+.chip-wrap { display: inline-flex; align-items: center; }
+.chip-wrap .chip-x { margin-left: -8px; width: 22px; height: 22px; border-radius: 50%; border: 0; background: var(--line); color: var(--muted); font-size: 14px; line-height: 1; z-index: 1; }
+.chip-wrap .chip-x:hover { background: var(--danger); color: #fff; }
+.tag-add { display: flex; gap: 8px; margin: 12px 0 4px; }
+.tag-add input { flex: 1; min-width: 0; border: 0; border-bottom: 1px dashed var(--border-strong); background: transparent; outline: 0; padding: 6px 2px; font-family: var(--serif); font-size: 16px; color: var(--text); }
+.tag-add input:focus { border-bottom: 1px solid var(--accent); }
+.tag-add input::placeholder { color: var(--muted); font-style: italic; }
+.chip.tag-link { cursor: pointer; }
+.chip.tag-link:hover { background: var(--accent); color: var(--on-accent); }
+.topic-chip em { font-style: normal; font-size: 12px; font-weight: 700; margin-left: 4px; padding: 0 6px; border-radius: 999px; background: var(--accent-soft); color: var(--accent-strong); }
+/* Rückblick unter den Aufgaben */
+.todos-block + .review-panel { margin-top: 8px; }

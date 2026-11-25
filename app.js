@@ -27,7 +27,7 @@
   const TAGS = ['family', 'friends', 'work', 'school', 'idea', 'health', 'nature', 'gratitude'];
   const TAG_EMOJI = { family: '🏡', friends: '🤝', work: '💼', school: '📚', idea: '💡', health: '💪', nature: '🌳', gratitude: '🙏' };
   const VIEWS = ['pages', 'calendar', 'today', 'settings'];
-  const REVIEW_FIELDS = ['grateful', 'different', 'intention'];
+  const REVIEW_FIELDS = ['howDay', 'grateful', 'different', 'intention'];
   const PALETTES = {
     sage: { cover: '#5c9c74', accent: '#3d9467' },
     sea: { cover: '#5b93b3', accent: '#3b82a6' },
@@ -82,7 +82,7 @@
   };
 
   /* ---------- Zustand ---------- */
-  const defaultState = () => ({ settings: { lang: null, theme: 'light', young: false, name: '', corner: 'quote', customFeels: [], planStart: 7, planEnd: 21, palette: 'sage', paper: 'lined', font: 'serif', size: 'm' }, days: {} });
+  const defaultState = () => ({ settings: { lang: null, theme: 'light', young: false, name: '', corner: 'quote', customFeels: [], customTags: [], planStart: 7, planEnd: 21, palette: 'sage', paper: 'lined', font: 'serif', size: 'm' }, days: {} });
   function load() {
     try {
       const raw = localStorage.getItem(STORE_KEY);
@@ -127,7 +127,8 @@
     editMood: null,
     pageIndex: null,
     pagesMonth: (() => { const d = new Date(); return new Date(d.getFullYear(), d.getMonth(), 1); })(),
-    reviewOpen: false,
+    reviewOpen: new Date().getHours() >= 18,
+    pendingSearch: null,
     quoteShift: 0,
     calMonth: (() => { const d = new Date(); return new Date(d.getFullYear(), d.getMonth(), 1); })(),
     onbLang: detectLang(),
@@ -238,7 +239,10 @@
     <button class="mchip ${cur === v ? 'on' : ''}" data-action="${action}" data-v="${v}" aria-pressed="${cur === v}" style="--c:var(--mood-${v})">
       ${young() ? `<span aria-hidden="true">${MOOD_EMOJI[v]}</span>` : '<i class="mdot" aria-hidden="true"></i>'}${esc(t('mood' + v))}
     </button>`).join('');
-  const tagLabel = tag => `${young() ? TAG_EMOJI[tag] + ' ' : ''}${esc(t('tag_' + tag))}`;
+  const customTags = () => Array.isArray(state.settings.customTags) ? state.settings.customTags : [];
+  const allTags = () => [...TAGS, ...customTags().map(x => 'c:' + x)];
+  const tagName = tag => tag.startsWith('c:') ? tag.slice(2) : t('tag_' + tag);
+  const tagLabel = tag => tag.startsWith('c:') ? esc(tag.slice(2)) : `${young() ? TAG_EMOJI[tag] + ' ' : ''}${esc(t('tag_' + tag))}`;
   const heading = text => `<h2 class="h2"><span>${esc(text)}</span></h2>`;
 
   /* ---------- Bereich: Heute ---------- */
@@ -379,7 +383,7 @@
         </li>`;
     }
     const open = ui.openMoments.has(m.id);
-    const tags = (m.tags || []).map(tag => `<span class="chip mini">${tagLabel(tag)}</span>`).join('');
+    const tags = (m.tags || []).map(tag => `<button class="chip mini tag-link" data-action="search-tag" data-tag="${esc(tag)}" title="${esc(t('topicsOverview'))}"># ${tagLabel(tag)}</button>`).join('');
     const hasTitle = !!(m.title || '').trim();
     return `
       <li class="mitem ${open ? 'open' : ''} ${ui.justAdded === m.id ? 'pop' : ''}" data-id="${m.id}" style="--i:${i}">
@@ -567,7 +571,7 @@
       ${subTabs()}
       ${dayNav(k)}
       ${scheduleBlock(k)}`;
-    return { l, r: todoBlock(k) };
+    return { l, r: todoBlock(k) + reviewPanel(k) };
   }
 
   function renderToday() {
@@ -598,8 +602,13 @@
         <div class="details ${ui.detailsOpen ? 'open' : ''}" id="details">
           <div class="details-inner">
             <span class="label">${esc(t('topics'))}</span>
+            <p class="hint topics-hint">${esc(t('topicsHint'))}</p>
             <div class="tags">
-              ${TAGS.map(tag => `<button class="chip ${ui.draft.tags.includes(tag) ? 'on' : ''}" data-action="toggle-tag" data-tag="${tag}" aria-pressed="${ui.draft.tags.includes(tag)}">${tagLabel(tag)}</button>`).join('')}
+              ${allTags().map(tag => `<span class="chip-wrap"><button class="chip ${ui.draft.tags.includes(tag) ? 'on' : ''}" data-action="toggle-tag" data-tag="${esc(tag)}" aria-pressed="${ui.draft.tags.includes(tag)}">${tagLabel(tag)}</button>${tag.startsWith('c:') ? `<button class="chip-x" data-action="remove-tag" data-tag="${esc(tag)}" aria-label="${esc(t('removeLabel'))}: ${esc(tag.slice(2))}" title="${esc(t('removeLabel'))}">×</button>` : ''}</span>`).join('')}
+            </div>
+            <div class="tag-add">
+              <input id="tag-input" type="text" maxlength="24" placeholder="${esc(t('tagInputPh'))}" aria-label="${esc(t('tagInputPh'))}">
+              <button class="btn soft sm" data-action="add-tag">${esc(t('addTag'))}</button>
             </div>
           </div>
         </div>
@@ -819,8 +828,22 @@
         ${heading(t('searchTitle'))}
         <input type="search" id="search" class="search" placeholder="${esc(t('search'))}" aria-label="${esc(t('search'))}">
         <ul class="results" id="results"></ul>
-      </section>`;
+      </section>
+      ${topicsOverview()}`;
     return { l, r };
+  }
+
+  function topicsOverview() {
+    const counts = {};
+    Object.values(state.days).forEach(d => d.moments.forEach(m => (m.tags || []).forEach(tg => { counts[tg] = (counts[tg] || 0) + 1; })));
+    const used = Object.keys(counts).sort((a, b) => counts[b] - counts[a]);
+    return `
+      <section class="block">
+        ${heading(t('topicsOverview'))}
+        ${used.length
+          ? `<div class="tags">${used.map(tg => `<button class="chip topic-chip" data-action="search-tag" data-tag="${esc(tg)}"># ${tagLabel(tg)} <em>${counts[tg]}</em></button>`).join('')}</div>`
+          : `<p class="hint">${esc(t('topicsEmpty'))}</p>`}
+      </section>`;
   }
 
   function runSearch(q) {
@@ -828,10 +851,16 @@
     q = q.trim().toLocaleLowerCase();
     if (!q) { box.innerHTML = ''; return; }
     const hits = [];
+    const tagQ = q.startsWith('#') ? q.slice(1).trim() : '';
     for (const k of Object.keys(state.days).sort().reverse()) {
       const d = state.days[k];
+      if (tagQ) {
+        for (const m of d.moments) if ((m.tags || []).some(tg => tagName(tg).toLocaleLowerCase() === tagQ)) hits.push({ k, text: [m.title, m.text].filter(Boolean).join(' — ') || tagQ, mood: m.mood, plain: true });
+        if (hits.length >= 60) break;
+        continue;
+      }
       if ((d.title || '').toLocaleLowerCase().includes(q)) hits.push({ k, text: d.title, mood: dayMood(k) });
-      for (const m of d.moments) { const tx = [m.title, m.text, m.feelNote, ...(m.feelWords || [])].filter(Boolean).join(' — '); if (tx.toLocaleLowerCase().includes(q)) hits.push({ k, text: tx, mood: m.mood }); }
+      for (const m of d.moments) { const tx = [m.title, m.text, m.feelNote, ...(m.feelWords || []), ...(m.tags || []).map(tagName)].filter(Boolean).join(' — '); if (tx.toLocaleLowerCase().includes(q)) hits.push({ k, text: tx, mood: m.mood }); }
       for (const x of d.todos || []) if ((x.text || '').toLocaleLowerCase().includes(q)) hits.push({ k, text: todoBullet(x) + ' ' + x.text, mood: 0 });
       for (const [h, v] of Object.entries(d.plan || {})) if ((v || '').toLocaleLowerCase().includes(q)) hits.push({ k, text: `${effTime(d, h)} ${v}`, mood: 0 });
       if (d.review) for (const f of REVIEW_FIELDS) {
@@ -851,7 +880,7 @@
     box.innerHTML = hits.map((h, i) => `
       <li style="--i:${i}"><button class="result" data-action="open-day" data-k="${h.k}">
         <span class="result-date"><i class="rdot-inline" style="--c:var(--mood-${h.mood || 0})"></i>${esc(fmt(dateOf(h.k), { day: 'numeric', month: 'short', year: 'numeric' }))}</span>
-        <span class="result-text">${mark(h.text)}</span>
+        <span class="result-text">${h.plain ? esc(h.text) : mark(h.text)}</span>
       </button></li>`).join('');
   }
 
@@ -1002,6 +1031,7 @@
     ui.justAdded = null;
     $$('#app textarea').forEach(autosize);
     if (ui.view === 'calendar') countUp(anim);
+    if (ui.view === 'calendar' && ui.pendingSearch && !flipping) { const s = $('#search'); if (s) { s.value = ui.pendingSearch; runSearch(ui.pendingSearch); } ui.pendingSearch = null; }
     if (ui.view === 'pages') bindSwipe();
     const edit = $('#edit-text');
     if (edit) { edit.focus({ preventScroll: false }); edit.setSelectionRange(edit.value.length, edit.value.length); }
@@ -1484,6 +1514,39 @@
       el.classList.toggle('on', i < 0);
       el.setAttribute('aria-pressed', i < 0);
     },
+    'add-tag': () => {
+      const inp = $('#tag-input');
+      const name = (inp?.value || '').trim().replace(/^#/, '').slice(0, 24);
+      if (!name) { inp?.focus(); return; }
+      const exists = TAGS.find(x => t('tag_' + x).toLocaleLowerCase() === name.toLocaleLowerCase());
+      let tag = exists;
+      if (!tag) {
+        const list = customTags().slice();
+        const found = list.find(x => x.toLocaleLowerCase() === name.toLocaleLowerCase());
+        if (!found) list.push(name);
+        state.settings.customTags = list.slice(-30);
+        tag = 'c:' + (found || name);
+        persist();
+      }
+      if (!ui.draft.tags.includes(tag)) ui.draft.tags.push(tag);
+      ui.detailsOpen = true;
+      render({ anim: false });
+      $('#tag-input')?.focus();
+    },
+    'remove-tag': el => {
+      const tag = el.dataset.tag;
+      state.settings.customTags = customTags().filter(x => 'c:' + x !== tag);
+      ui.draft.tags = ui.draft.tags.filter(x => x !== tag);
+      persist();
+      render({ anim: false });
+      $('#tag-input')?.focus();
+    },
+    'search-tag': el => {
+      const label = '#' + tagName(el.dataset.tag);
+      if (ui.view === 'calendar') { const s = $('#search'); if (s) { s.value = label; runSearch(label); } return; }
+      ui.pendingSearch = label;
+      go('calendar');
+    },
     'toggle-tag': el => {
       const tag = el.dataset.tag;
       const i = ui.draft.tags.indexOf(tag);
@@ -1650,7 +1713,7 @@
           const ids = new Set(cur.moments.map(m => m.id));
           for (const m of (Array.isArray(d.moments) ? d.moments : [])) {
             if (m && m.id && !ids.has(m.id) && typeof m.time === 'number') {
-              cur.moments.push({ id: String(m.id), time: m.time, title: String(m.title || '').slice(0, 80), text: String(m.text || ''), feel: (FEEL[m.feel] || (typeof m.feel === 'string' && m.feel.startsWith('c:'))) ? m.feel : null, feelName: String(m.feelName || '').slice(0, 24), feelWords: Array.isArray(m.feelWords) ? m.feelWords.map(String).slice(0, 12) : [], feelNote: String(m.feelNote || ''), mood: [1, 2, 3, 4, 5].includes(m.mood) ? m.mood : null, tags: Array.isArray(m.tags) ? m.tags.filter(x => TAGS.includes(x)) : [], ...(m.editedAt ? { editedAt: Number(m.editedAt) } : {}) });
+              cur.moments.push({ id: String(m.id), time: m.time, title: String(m.title || '').slice(0, 80), text: String(m.text || ''), feel: (FEEL[m.feel] || (typeof m.feel === 'string' && m.feel.startsWith('c:'))) ? m.feel : null, feelName: String(m.feelName || '').slice(0, 24), feelWords: Array.isArray(m.feelWords) ? m.feelWords.map(String).slice(0, 12) : [], feelNote: String(m.feelNote || ''), mood: [1, 2, 3, 4, 5].includes(m.mood) ? m.mood : null, tags: Array.isArray(m.tags) ? m.tags.filter(x => TAGS.includes(x) || (typeof x === 'string' && x.startsWith('c:'))).map(String) : [], ...(m.editedAt ? { editedAt: Number(m.editedAt) } : {}) });
             }
           }
           if (d.review && typeof d.review === 'object' && !reviewFilled(cur.review)) cur.review = d.review;
@@ -1732,6 +1795,7 @@
   document.addEventListener('keydown', e => {
     if (e.target.classList?.contains('htime-input') && (e.key === 'Escape' || e.key === 'Enter')) { e.preventDefault(); e.target.blur(); return; }
     const mod = e.key === 'Enter' && (e.metaKey || e.ctrlKey);
+    if (e.target.id === 'tag-input' && e.key === 'Enter') { e.preventDefault(); actions['add-tag'](); return; }
     if (e.target.classList?.contains('todo-input') && e.key === 'Enter') { e.preventDefault(); actions['add-todo'](e.target); return; }
     if (e.target.classList?.contains('hinput') && e.key === 'Enter') { e.preventDefault(); const all = $$('.hinput'); const i = all.indexOf(e.target); all[i + 1]?.focus(); return; }
     if (/-emoji-(type|name)$/.test(e.target.id || '') && e.key === 'Enter') { e.preventDefault(); const sc = e.target.id.split('-')[0]; addCustomFeel(sc, $(`#${sc}-emoji-type`)?.value, ($(`#${sc}-emoji-name`)?.value || '').trim()); }
